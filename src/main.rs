@@ -1,13 +1,9 @@
 use dioxus::prelude::*;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use std::collections::HashMap;
-use log;
 
 mod data;
 mod components;
 
-use data::{IcebergTable, generate_sample_table};
+use data::generate_sample_table;
 use components::{TableInfoTab, SnapshotTimelineTab};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,7 +19,7 @@ fn main() {
 
 fn App() -> Element {
     let mut active_tab = use_signal(|| ActiveTab::TableInfo);
-    let table_data = use_signal(|| generate_sample_table());
+    let table_data = use_signal(generate_sample_table);
 
     rsx! {
         div {

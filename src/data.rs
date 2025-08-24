@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc, Duration};
-use uuid::Uuid;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -97,7 +96,7 @@ pub struct Summary {
 impl Snapshot {
     pub fn timestamp(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_millis(self.timestamp_ms)
-            .unwrap_or_else(|| Utc::now())
+            .unwrap_or_else(Utc::now)
     }
 
     pub fn operation(&self) -> String {
