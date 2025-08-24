@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [ "**" ]  # Build on all branches
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Quick checks first
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-check-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+    - name: Check
+      run: cargo check --all-targets --all-features
+
+  # Code quality checks
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - name: Cache cargo
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-quality-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+    - name: Format check
+      run: cargo fmt --all -- --check
+    - name: Clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Cross-platform build using reusable workflow
+  build:
+    name: Cross-Platform Build
+    uses: ./.github/workflows/build.yml
+    with:
+      upload_artifacts: ${{ github.event_name == 'push' }}  # Only upload on push, not PR
+      artifact_retention_days: ${{ github.ref == 'refs/heads/main' && 30 || 7 }}  # Keep main builds longer
+      build_profile: ${{ github.ref == 'refs/heads/main' && 'release' || 'debug' }}  # Release builds only for main
+
+  # Summary job
+  ci-success:
+    name: CI Success
+    if: always()
+    needs: [check, quality, build]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check all jobs
+      run: |
+        if [[ "${{ needs.check.result }}" != "success" ]]; then
+          echo "Check job failed"
+          exit 1
+        fi
+        if [[ "${{ needs.quality.result }}" != "success" ]]; then
+          echo "Quality job failed"
+          exit 1
+        fi
+        if [[ "${{ needs.build.result }}" != "success" ]]; then
+          echo "Build job failed"
+          exit 1
+        fi
+        echo "All CI jobs passed!"
