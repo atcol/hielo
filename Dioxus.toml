@@ -1,0 +1,41 @@
+[application]
+name = "Hielo"
+default_platform = "desktop"
+
+[web.app]
+title = "Iceberg Table Viewer"
+base_path = "iceberg-table-viewer"
+
+[web.watcher]
+reload_html = true
+watch_path = ["src", "assets"]
+
+[web.resource]
+style = ["./assets/main.css"]
+
+[web.proxy]
+
+[bundle]
+identifier = "com.icebergtableviewer.app"
+publisher = "Iceberg Table Viewer"
+icon = ["./assets/icon-32x32.png"]
+resources = ["./assets"]
+copyright = "Copyright (c) 2024 Iceberg Table Viewer contributors"
+category = "DeveloperTool"
+short_description = "Apache Iceberg table metadata viewer"
+long_description = "A modern desktop application for visualizing Apache Iceberg table schemas, snapshots, and metadata"
+
+[bundle.linux]
+depends = ["libwebkit2gtk-4.0-dev", "libgtk-3-dev"]
+
+[bundle.macos]
+frameworks = []
+minimum_system_version = "10.11"
+exception_domain = []
+
+[bundle.windows]
+digest_algorithm = "sha256"
+timestamp_url = "http://timestamp.sectigo.com"
+tsp = false
+wix = []
+nsis = []
