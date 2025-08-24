@@ -40,33 +40,33 @@ jobs:
           # Linux x86_64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: iceberg-table-viewer
-            asset_name: iceberg-table-viewer-linux-x86_64
+            artifact_name: hielo
+            asset_name: hielo-linux-x86_64
             
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact_name: iceberg-table-viewer
-            asset_name: iceberg-table-viewer-linux-aarch64
+            artifact_name: hielo
+            asset_name: hielo-linux-aarch64
             cross: true
             
           # macOS x86_64
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact_name: iceberg-table-viewer
-            asset_name: iceberg-table-viewer-macos-x86_64
+            artifact_name: hielo
+            asset_name: hielo-macos-x86_64
             
           # macOS ARM64 (M1/M2)
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact_name: iceberg-table-viewer
-            asset_name: iceberg-table-viewer-macos-aarch64
+            artifact_name: hielo
+            asset_name: hielo-macos-aarch64
             
           # Windows x86_64
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact_name: iceberg-table-viewer.exe
-            asset_name: iceberg-table-viewer-windows-x86_64.exe
+            artifact_name: hielo.exe
+            asset_name: hielo-windows-x86_64.exe
 
     steps:
     - name: Checkout code
