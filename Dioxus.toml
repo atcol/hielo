@@ -3,8 +3,8 @@ name = "Hielo"
 default_platform = "desktop"
 
 [web.app]
-title = "Iceberg Table Viewer"
-base_path = "iceberg-table-viewer"
+title = "Hieldo - Iceberg Table Visualisation & Analysis"
+base_path = "hielo"
 
 [web.watcher]
 reload_html = true
@@ -16,11 +16,11 @@ style = ["./assets/main.css"]
 [web.proxy]
 
 [bundle]
-identifier = "com.icebergtableviewer.app"
-publisher = "Iceberg Table Viewer"
+identifier = "systems.wellow.hield.app"
+publisher = "Hielo"
 icon = ["./assets/icon-32x32.png"]
 resources = ["./assets"]
-copyright = "Copyright (c) 2024 Iceberg Table Viewer contributors"
+copyright = "Copyright (c) 2025 Wellow Systems Limited"
 category = "DeveloperTool"
 short_description = "Apache Iceberg table metadata viewer"
 long_description = "A modern desktop application for visualizing Apache Iceberg table schemas, snapshots, and metadata"
