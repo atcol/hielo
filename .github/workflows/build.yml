@@ -18,10 +18,20 @@ on:
         required: false
         type: string
         default: 'release'
+      cancel_in_progress:
+        description: 'Whether to cancel in-progress builds'
+        required: false
+        type: boolean
+        default: true
     outputs:
       artifact_names:
         description: 'JSON array of artifact names created'
         value: ${{ jobs.build.outputs.artifact_names }}
+
+# Conditional concurrency control - only for non-release builds
+concurrency:
+  group: ${{ inputs.cancel_in_progress && format('build-{0}', github.ref) || '' }}
+  cancel-in-progress: ${{ inputs.cancel_in_progress }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -110,15 +120,25 @@ jobs:
       if: runner.os == 'Linux' && !matrix.cross
       run: |
         sudo apt-get update
+        
+        # Try newer package names first, fallback to older ones
+        if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
+          WEBKIT_PKG="libwebkit2gtk-4.1-dev"
+        else
+          WEBKIT_PKG="libwebkit2gtk-4.0-dev"
+        fi
+        
         sudo apt-get install -y \
           libgtk-3-dev \
-          libwebkit2gtk-4.1-dev \
+          $WEBKIT_PKG \
           libappindicator3-dev \
           librsvg2-dev \
           patchelf \
           libxdo-dev \
           libxcb-shape0-dev \
           libxcb-xfixes0-dev
+          
+        echo "Installed WebKit package: $WEBKIT_PKG"
 
     # macOS specific dependencies  
     - name: Install macOS dependencies
@@ -168,19 +188,24 @@ jobs:
         mkdir -p artifacts
         BINARY_PATH="target/${{ matrix.target }}/${{ inputs.build_profile }}/${{ matrix.artifact_name }}"
         
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          cp "$BINARY_PATH" "artifacts/${{ matrix.asset_name }}"
-        else
-          cp "$BINARY_PATH" "artifacts/${{ matrix.asset_name }}"
-        fi
+        # Copy binary to artifacts directory
+        cp "$BINARY_PATH" "artifacts/${{ matrix.asset_name }}"
         
-        # Create checksum
+        # Create checksum using the appropriate tool for each platform
         cd artifacts
         if [[ "${{ runner.os }}" == "Windows" ]]; then
-          powershell -command "Get-FileHash -Algorithm SHA256 '${{ matrix.asset_name }}' | Select-Object -ExpandProperty Hash" > ${{ matrix.asset_name }}.sha256
+          # Windows: Use PowerShell Get-FileHash
+          powershell -command "(Get-FileHash -Algorithm SHA256 '${{ matrix.asset_name }}').Hash.ToLower() + '  ${{ matrix.asset_name }}'" > ${{ matrix.asset_name }}.sha256
+        elif [[ "${{ runner.os }}" == "macOS" ]]; then
+          # macOS: Use shasum
+          shasum -a 256 "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
         else
+          # Linux: Use sha256sum
           sha256sum "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
         fi
+        
+        echo "Created artifacts:"
+        ls -la
       shell: bash
 
     - name: Upload build artifacts
