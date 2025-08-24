@@ -1,12 +1,12 @@
+use crate::data::{DataType, IcebergTable, NestedField};
 use dioxus::prelude::*;
-use crate::data::{IcebergTable, NestedField, DataType};
 
 #[component]
 pub fn TableInfoTab(table: IcebergTable) -> Element {
     rsx! {
         div {
             class: "space-y-6",
-            
+
             // Table Overview
             div {
                 class: "bg-white shadow rounded-lg",
@@ -183,7 +183,7 @@ pub fn TableInfoTab(table: IcebergTable) -> Element {
 #[component]
 pub fn SchemaFieldRow(field: NestedField, depth: usize) -> Element {
     let indent_class = format!("pl-{}", depth * 4);
-    
+
     rsx! {
         tr {
             td {
@@ -223,7 +223,7 @@ pub fn SchemaFieldRow(field: NestedField, depth: usize) -> Element {
                 {field.doc.unwrap_or_else(|| "—".to_string())}
             }
         }
-        
+
         // Render nested fields for struct types
         if let DataType::Struct { fields } = &field.field_type {
             for nested_field in fields {
@@ -241,7 +241,7 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
     rsx! {
         div {
             class: "space-y-6",
-            
+
             // Timeline Header
             div {
                 class: "bg-white shadow rounded-lg",

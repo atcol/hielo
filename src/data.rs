@@ -1,5 +1,5 @@
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc, Duration};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -42,10 +42,20 @@ pub enum DataType {
     String,
     Uuid,
     Binary,
-    Decimal { precision: u32, scale: u32 },
-    Struct { fields: Vec<NestedField> },
-    List { element: Box<DataType> },
-    Map { key: Box<DataType>, value: Box<DataType> },
+    Decimal {
+        precision: u32,
+        scale: u32,
+    },
+    Struct {
+        fields: Vec<NestedField>,
+    },
+    List {
+        element: Box<DataType>,
+    },
+    Map {
+        key: Box<DataType>,
+        value: Box<DataType>,
+    },
 }
 
 impl DataType {
@@ -95,8 +105,7 @@ pub struct Summary {
 
 impl Snapshot {
     pub fn timestamp(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_millis(self.timestamp_ms)
-            .unwrap_or_else(Utc::now)
+        DateTime::from_timestamp_millis(self.timestamp_ms).unwrap_or_else(Utc::now)
     }
 
     pub fn operation(&self) -> String {
@@ -115,7 +124,9 @@ impl Snapshot {
 
     pub fn size_change(&self) -> String {
         if let Some(summary) = &self.summary {
-            if let (Some(added), Some(removed)) = (&summary.added_files_size, &summary.removed_files_size) {
+            if let (Some(added), Some(removed)) =
+                (&summary.added_files_size, &summary.removed_files_size)
+            {
                 format!("+{} -{}", added, removed)
             } else if let Some(added) = &summary.added_files_size {
                 format!("+{}", added)
@@ -131,7 +142,7 @@ impl Snapshot {
 // Sample data generation for demo purposes
 pub fn generate_sample_table() -> IcebergTable {
     let now = Utc::now();
-    
+
     let schema = TableSchema {
         schema_id: 1,
         fields: vec![
@@ -167,7 +178,10 @@ pub fn generate_sample_table() -> IcebergTable {
                 id: 5,
                 name: "balance".to_string(),
                 required: false,
-                field_type: DataType::Decimal { precision: 10, scale: 2 },
+                field_type: DataType::Decimal {
+                    precision: 10,
+                    scale: 2,
+                },
                 doc: Some("Account balance".to_string()),
             },
             NestedField {
@@ -212,7 +226,8 @@ pub fn generate_sample_table() -> IcebergTable {
                 removed_files_size: Some("0B".to_string()),
                 total_size: Some("2.4MB".to_string()),
             }),
-            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1001-manifest-list.avro".to_string(),
+            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1001-manifest-list.avro"
+                .to_string(),
             schema_id: Some(1),
         },
         Snapshot {
@@ -229,7 +244,8 @@ pub fn generate_sample_table() -> IcebergTable {
                 removed_files_size: Some("0B".to_string()),
                 total_size: Some("3.6MB".to_string()),
             }),
-            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1002-manifest-list.avro".to_string(),
+            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1002-manifest-list.avro"
+                .to_string(),
             schema_id: Some(1),
         },
         Snapshot {
@@ -246,7 +262,8 @@ pub fn generate_sample_table() -> IcebergTable {
                 removed_files_size: Some("0.4MB".to_string()),
                 total_size: Some("4.0MB".to_string()),
             }),
-            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1003-manifest-list.avro".to_string(),
+            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1003-manifest-list.avro"
+                .to_string(),
             schema_id: Some(1),
         },
         Snapshot {
@@ -263,7 +280,8 @@ pub fn generate_sample_table() -> IcebergTable {
                 removed_files_size: Some("4.0MB".to_string()),
                 total_size: Some("3.2MB".to_string()),
             }),
-            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1004-manifest-list.avro".to_string(),
+            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1004-manifest-list.avro"
+                .to_string(),
             schema_id: Some(1),
         },
         Snapshot {
@@ -280,16 +298,23 @@ pub fn generate_sample_table() -> IcebergTable {
                 removed_files_size: Some("0B".to_string()),
                 total_size: Some("5.0MB".to_string()),
             }),
-            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1005-manifest-list.avro".to_string(),
+            manifest_list: "s3://bucket/warehouse/users/metadata/snap-1005-manifest-list.avro"
+                .to_string(),
             schema_id: Some(1),
         },
     ];
 
     let mut properties = HashMap::new();
     properties.insert("write.format.default".to_string(), "parquet".to_string());
-    properties.insert("write.parquet.compression-codec".to_string(), "zstd".to_string());
+    properties.insert(
+        "write.parquet.compression-codec".to_string(),
+        "zstd".to_string(),
+    );
     properties.insert("commit.retry.num-retries".to_string(), "3".to_string());
-    properties.insert("commit.manifest.target-size-bytes".to_string(), "8388608".to_string());
+    properties.insert(
+        "commit.manifest.target-size-bytes".to_string(),
+        "8388608".to_string(),
+    );
 
     IcebergTable {
         name: "users".to_string(),

@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
 
-mod data;
 mod components;
+mod data;
 
+use components::{SnapshotTimelineTab, TableInfoTab};
 use data::generate_sample_table;
-use components::{TableInfoTab, SnapshotTimelineTab};
 
 #[derive(Debug, Clone, PartialEq)]
 enum ActiveTab {
@@ -99,13 +99,13 @@ fn App() -> Element {
         //style {
         //    r#"
         //    @import url('https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
-        //    
+        //
         //    .timeline-item {
         //        position: relative;
         //        padding-left: 2rem;
         //        margin-bottom: 2rem;
         //    }
-        //    
+        //
         //    .timeline-item::before {
         //        content: '';
         //        position: absolute;
@@ -118,7 +118,7 @@ fn App() -> Element {
         //        border: 2px solid white;
         //        box-shadow: 0 0 0 2px #3b82f6;
         //    }
-        //    
+        //
         //    .timeline-item::after {
         //        content: '';
         //        position: absolute;
@@ -128,7 +128,7 @@ fn App() -> Element {
         //        height: calc(100% + 1rem);
         //        background-color: #e5e7eb;
         //    }
-        //    
+        //
         //    .timeline-item:last-child::after {
         //        display: none;
         //    }
