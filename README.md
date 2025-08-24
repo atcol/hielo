@@ -1,6 +1,7 @@
 # 🧊 Hielo
 
-A modern, native desktop application for visualizing Apache Iceberg table metadata and snapshot history. Built with Rust and Dioxus for performance and cross-platform compatibility.
+A modern, native desktop application for visualizing Apache Iceberg table metadata and snapshot history.
+Built with Rust and Dioxus for performance and cross-platform compatibility.
 
 *Hielo* (Spanish for "ice") is a lightweight, fast tool for exploring your Iceberg tables.
 
