@@ -126,7 +126,6 @@ mod tests {
     use super::*;
     use crate::catalog::CatalogType;
     use std::collections::HashMap;
-    
 
     fn create_test_catalog() -> CatalogConfig {
         let mut config = HashMap::new();
