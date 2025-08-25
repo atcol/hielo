@@ -39,7 +39,7 @@ fn App() -> Element {
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
     let mut table_view_tab = use_signal(|| TableViewTab::TableInfo);
-    let catalog_manager = use_signal(|| CatalogManager::new());
+    let catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
 

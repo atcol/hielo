@@ -102,8 +102,8 @@ fn convert_primitive_type(primitive: &PrimitiveType) -> DataType {
         PrimitiveType::Fixed(_) => DataType::Binary,
         PrimitiveType::Binary => DataType::Binary,
         PrimitiveType::Decimal { precision, scale } => DataType::Decimal {
-            precision: *precision as u32,
-            scale: *scale as u32,
+            precision: { *precision },
+            scale: { *scale },
         },
         PrimitiveType::TimestampNs => todo!(),
         PrimitiveType::TimestamptzNs => todo!(),
@@ -118,7 +118,7 @@ fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
         timestamp_ms: snapshot.timestamp_ms(),
         summary,
         manifest_list: snapshot.manifest_list().to_string(),
-        schema_id: snapshot.schema_id().map(|id| id),
+        schema_id: snapshot.schema_id(),
     })
 }
 

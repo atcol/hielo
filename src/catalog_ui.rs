@@ -26,8 +26,8 @@ pub fn CatalogConnectionScreen(
     let connection_status = use_signal(|| ConnectionStatus::Disconnected);
     let selected_namespace = use_signal(|| Option::<String>::None);
     let selected_table = use_signal(|| Option::<TableReference>::None);
-    let namespaces = use_signal(|| Vec::<String>::new());
-    let tables = use_signal(|| Vec::<TableReference>::new());
+    let namespaces = use_signal(Vec::<String>::new);
+    let tables = use_signal(Vec::<TableReference>::new);
 
     rsx! {
         div {
@@ -123,10 +123,10 @@ pub fn CatalogConnectionScreen(
                 // Namespace and Table Selection
                 if matches!(connection_status(), ConnectionStatus::Connected) {
                     TableBrowser {
-                        catalog_manager: catalog_manager.clone(),
+                        catalog_manager: catalog_manager,
                         namespaces: namespaces(),
-                        selected_namespace: selected_namespace.clone(),
-                        tables: tables.clone(),
+                        selected_namespace: selected_namespace,
+                        tables: tables,
                         on_table_selected,
                     }
                 }
@@ -672,8 +672,8 @@ pub fn CatalogBrowser(
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
     let selected_namespace = use_signal(|| Option::<String>::None);
-    let mut namespaces = use_signal(|| Vec::<String>::new());
-    let tables = use_signal(|| Vec::<TableReference>::new());
+    let mut namespaces = use_signal(Vec::<String>::new);
+    let tables = use_signal(Vec::<TableReference>::new);
 
     // Load namespaces when component mounts or catalog changes
     use_effect(move || {
