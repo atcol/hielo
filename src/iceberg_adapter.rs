@@ -142,7 +142,6 @@ fn convert_summary(summary: &HashMap<String, String>) -> Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_convert_primitive_types() {

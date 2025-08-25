@@ -18,9 +18,10 @@ pub enum CatalogFormType {
 
 #[component]
 pub fn CatalogConnectionScreen(
+    catalog_manager: Signal<CatalogManager>,
+    on_catalog_connected: EventHandler<()>,
     on_table_selected: EventHandler<(String, String, String)>, // (catalog_name, namespace, table_name)
 ) -> Element {
-    let catalog_manager = use_signal(|| CatalogManager::new());
     let mut selected_catalog_type = use_signal(|| CatalogFormType::Rest);
     let connection_status = use_signal(|| ConnectionStatus::Disconnected);
     let selected_namespace = use_signal(|| Option::<String>::None);
@@ -98,16 +99,18 @@ pub fn CatalogConnectionScreen(
                         match *selected_catalog_type.read() {
                             CatalogFormType::Rest => rsx! {
                                 RestCatalogForm {
-                                    connection_status: connection_status.clone(),
-                                    catalog_manager: catalog_manager.clone(),
-                                    namespaces: namespaces.clone(),
+                                    connection_status: connection_status,
+                                    catalog_manager: catalog_manager,
+                                    namespaces: namespaces,
+                                    on_catalog_connected: on_catalog_connected,
                                 }
                             },
                             CatalogFormType::Glue => rsx! {
                                 GlueCatalogForm {
-                                    connection_status: connection_status.clone(),
-                                    catalog_manager: catalog_manager.clone(),
-                                    namespaces: namespaces.clone(),
+                                    connection_status: connection_status,
+                                    catalog_manager: catalog_manager,
+                                    namespaces: namespaces,
+                                    on_catalog_connected: on_catalog_connected,
                                 }
                             },
                         }
@@ -137,6 +140,7 @@ fn RestCatalogForm(
     connection_status: Signal<ConnectionStatus>,
     catalog_manager: Signal<CatalogManager>,
     namespaces: Signal<Vec<String>>,
+    on_catalog_connected: EventHandler<()>,
 ) -> Element {
     let mut catalog_name = use_signal(|| "rest-catalog".to_string());
     let mut uri = use_signal(|| "".to_string());
@@ -174,7 +178,11 @@ fn RestCatalogForm(
                     .list_namespaces(&catalog_name())
                     .await
                 {
-                    Ok(ns) => namespaces.set(ns),
+                    Ok(ns) => {
+                        namespaces.set(ns);
+                        // Call the connected callback to switch to tabbed interface
+                        on_catalog_connected.call(());
+                    }
                     Err(e) => connection_status.set(ConnectionStatus::Error(e.to_string())),
                 }
             }
@@ -268,6 +276,7 @@ fn GlueCatalogForm(
     connection_status: Signal<ConnectionStatus>,
     catalog_manager: Signal<CatalogManager>,
     namespaces: Signal<Vec<String>>,
+    on_catalog_connected: EventHandler<()>,
 ) -> Element {
     let mut catalog_name = use_signal(|| "glue-catalog".to_string());
     let mut warehouse = use_signal(|| "".to_string());
@@ -303,7 +312,11 @@ fn GlueCatalogForm(
                     .list_namespaces(&catalog_name())
                     .await
                 {
-                    Ok(ns) => namespaces.set(ns),
+                    Ok(ns) => {
+                        namespaces.set(ns);
+                        // Call the connected callback to switch to tabbed interface
+                        on_catalog_connected.call(());
+                    }
                     Err(e) => connection_status.set(ConnectionStatus::Error(e.to_string())),
                 }
             }
@@ -501,14 +514,22 @@ fn TableBrowser(
         loading_tables.set(true);
         // Get the first catalog connection (assuming single connection for now)
         if let Some(connection) = catalog_manager.read().get_connections().first() {
-            log::info!("Loading tables for namespace: {} from catalog: {}", namespace, connection.config.name);
+            log::info!(
+                "Loading tables for namespace: {} from catalog: {}",
+                namespace,
+                connection.config.name
+            );
             match catalog_manager
                 .read()
                 .list_tables(&connection.config.name, &namespace)
                 .await
             {
                 Ok(table_list) => {
-                    log::info!("Successfully loaded {} tables for namespace: {}", table_list.len(), namespace);
+                    log::info!(
+                        "Successfully loaded {} tables for namespace: {}",
+                        table_list.len(),
+                        namespace
+                    );
                     tables.set(table_list);
                     selected_namespace.set(Some(namespace));
                 }
@@ -638,6 +659,61 @@ fn TableBrowser(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn CatalogBrowser(
+    catalog_manager: Signal<CatalogManager>,
+    on_table_selected: EventHandler<(String, String, String)>,
+) -> Element {
+    let selected_namespace = use_signal(|| Option::<String>::None);
+    let mut namespaces = use_signal(|| Vec::<String>::new());
+    let tables = use_signal(|| Vec::<TableReference>::new());
+
+    // Load namespaces when component mounts or catalog changes
+    use_effect(move || {
+        spawn(async move {
+            if let Some(connection) = catalog_manager.read().get_connections().first() {
+                match catalog_manager
+                    .read()
+                    .list_namespaces(&connection.config.name)
+                    .await
+                {
+                    Ok(ns) => namespaces.set(ns),
+                    Err(e) => log::error!("Failed to load namespaces: {}", e),
+                }
+            }
+        });
+    });
+
+    rsx! {
+        div {
+            class: "space-y-6",
+
+            div {
+                class: "bg-white shadow rounded-lg",
+                div {
+                    class: "px-4 py-5 sm:p-6",
+                    h3 {
+                        class: "text-lg leading-6 font-medium text-gray-900 mb-4",
+                        "Browse Catalog"
+                    }
+                    p {
+                        class: "text-sm text-gray-500 mb-6",
+                        "Select a namespace to explore tables in your Iceberg catalog."
+                    }
+
+                    TableBrowser {
+                        catalog_manager: catalog_manager,
+                        namespaces: namespaces(),
+                        selected_namespace: selected_namespace,
+                        tables: tables,
+                        on_table_selected: on_table_selected
                     }
                 }
             }

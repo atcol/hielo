@@ -7,18 +7,24 @@ mod data;
 mod iceberg_adapter;
 
 use catalog::CatalogManager;
-use catalog_ui::CatalogConnectionScreen;
+use catalog_ui::{CatalogBrowser, CatalogConnectionScreen};
 use components::{SnapshotTimelineTab, TableInfoTab};
 use data::IcebergTable;
 
 #[derive(Debug, Clone, PartialEq)]
 enum AppState {
     CatalogConnection,
-    TableView(IcebergTable),
+    Connected, // After connecting, show the tabbed interface
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ActiveTab {
+enum AppTab {
+    Catalog,
+    Table { table: IcebergTable, tab_id: String },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum TableViewTab {
     TableInfo,
     SnapshotHistory,
 }
@@ -30,7 +36,9 @@ fn main() {
 
 fn App() -> Element {
     let mut app_state = use_signal(|| AppState::CatalogConnection);
-    let mut active_tab = use_signal(|| ActiveTab::TableInfo);
+    let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
+    let mut active_tab_index = use_signal(|| 0usize);
+    let mut table_view_tab = use_signal(|| TableViewTab::TableInfo);
     let catalog_manager = use_signal(|| CatalogManager::new());
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
@@ -46,9 +54,43 @@ fn App() -> Element {
                 .await
             {
                 Ok(iceberg_table) => {
-                    match iceberg_adapter::convert_iceberg_table(&iceberg_table, namespace) {
+                    match iceberg_adapter::convert_iceberg_table(&iceberg_table, namespace.clone())
+                    {
                         Ok(hielo_table) => {
-                            app_state.set(AppState::TableView(hielo_table));
+                            // Create a unique tab ID
+                            let tab_id = format!("{}.{}", namespace, table_name);
+                            let new_tab = AppTab::Table {
+                                table: hielo_table,
+                                tab_id: tab_id.clone(),
+                            };
+
+                            // Check if tab already exists
+                            let existing_index = open_tabs.read().iter().position(|tab| {
+                                if let AppTab::Table {
+                                    tab_id: existing_id,
+                                    ..
+                                } = tab
+                                {
+                                    existing_id == &tab_id
+                                } else {
+                                    false
+                                }
+                            });
+
+                            if let Some(index) = existing_index {
+                                // Switch to existing tab
+                                active_tab_index.set(index);
+                            } else {
+                                // Add new tab and switch to it
+                                let mut tabs = open_tabs.read().clone();
+                                tabs.push(new_tab);
+                                let new_index = tabs.len() - 1;
+                                open_tabs.set(tabs);
+                                active_tab_index.set(new_index);
+                            }
+
+                            // Ensure we're in connected state
+                            app_state.set(AppState::Connected);
                         }
                         Err(e) => {
                             error_message.set(Some(format!("Failed to convert table: {}", e)));
@@ -63,9 +105,9 @@ fn App() -> Element {
         });
     };
 
-    let back_to_catalog = move |_| {
-        app_state.set(AppState::CatalogConnection);
-        error_message.set(None);
+    let on_catalog_connected = move |_| {
+        app_state.set(AppState::Connected);
+        active_tab_index.set(0); // Switch to catalog tab
     };
 
     rsx! {
@@ -147,44 +189,22 @@ fn App() -> Element {
             match app_state() {
                 AppState::CatalogConnection => rsx! {
                     CatalogConnectionScreen {
+                        catalog_manager: catalog_manager,
+                        on_catalog_connected: on_catalog_connected,
                         on_table_selected: load_table
                     }
                 },
-                AppState::TableView(table) => rsx! {
-                    // Header with back button
+                AppState::Connected => rsx! {
+                    // Header
                     header {
                         class: "bg-white shadow-sm border-b",
                         div {
                             class: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
                             div {
                                 class: "flex justify-between items-center py-6",
-                                div {
-                                    class: "flex items-center space-x-4",
-                                    button {
-                                        onclick: back_to_catalog,
-                                        class: "inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
-                                        svg {
-                                            class: "h-4 w-4 mr-2",
-                                            fill: "none",
-                                            stroke: "currentColor",
-                                            view_box: "0 0 24 24",
-                                            path {
-                                                stroke_linecap: "round",
-                                                stroke_linejoin: "round",
-                                                stroke_width: "2",
-                                                d: "M15 19l-7-7 7-7"
-                                            }
-                                        }
-                                        "Back to Catalog"
-                                    }
-                                    h1 {
-                                        class: "text-3xl font-bold text-gray-900",
-                                        "🧊 Hielo"
-                                    }
-                                }
-                                div {
-                                    class: "text-sm text-gray-500",
-                                    "Table: {table.namespace}.{table.name}"
+                                h1 {
+                                    class: "text-3xl font-bold text-gray-900",
+                                    "🧊 Hielo"
                                 }
                             }
                         }
@@ -196,30 +216,50 @@ fn App() -> Element {
                         div {
                             class: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
                             nav {
-                                class: "flex space-x-8",
-                                button {
-                                    class: format!(
-                                        "py-4 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                        if *active_tab.read() == ActiveTab::TableInfo {
-                                            "border-blue-500 text-blue-600"
-                                        } else {
-                                            "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                class: "flex space-x-0 overflow-x-auto",
+                                for (index, tab) in open_tabs().iter().enumerate() {
+                                    div {
+                                        class: "flex items-center",
+                                        button {
+                                            onclick: move |_| {
+                                                if index < open_tabs.read().len() {
+                                                    active_tab_index.set(index);
+                                                }
+                                            },
+                                            class: format!(
+                                                "py-4 px-4 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center {}",
+                                                if active_tab_index() == index {
+                                                    "border-blue-500 text-blue-600 bg-blue-50"
+                                                } else {
+                                                    "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                }
+                                            ),
+                                            match tab {
+                                                AppTab::Catalog => "🔍 Catalog".to_string(),
+                                                AppTab::Table { table, .. } => format!("📊 {}.{}", table.namespace, table.name),
+                                            }
                                         }
-                                    ),
-                                    onclick: move |_| active_tab.set(ActiveTab::TableInfo),
-                                    "📋 Table Information"
-                                }
-                                button {
-                                    class: format!(
-                                        "py-4 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                        if *active_tab.read() == ActiveTab::SnapshotHistory {
-                                            "border-blue-500 text-blue-600"
-                                        } else {
-                                            "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                        if index > 0 {
+                                            button {
+                                                onclick: move |_| {
+                                                    let mut tabs = open_tabs.read().clone();
+                                                    if tabs.len() > 1 && index > 0 { // Don't close catalog tab
+                                                        tabs.remove(index);
+                                                        open_tabs.set(tabs.clone());
+
+                                                        // Adjust active tab index if necessary
+                                                        let current_active = *active_tab_index.read();
+                                                        if current_active >= index {
+                                                            let new_active = if current_active > 0 { current_active - 1 } else { 0 };
+                                                            active_tab_index.set(new_active);
+                                                        }
+                                                    }
+                                                },
+                                                class: "ml-2 p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600",
+                                                "×"
+                                            }
                                         }
-                                    ),
-                                    onclick: move |_| active_tab.set(ActiveTab::SnapshotHistory),
-                                    "📈 Snapshot History"
+                                    }
                                 }
                             }
                         }
@@ -228,13 +268,58 @@ fn App() -> Element {
                     // Tab Content
                     main {
                         class: "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8",
-                        match *active_tab.read() {
-                            ActiveTab::TableInfo => rsx! {
-                                TableInfoTab { table: table.clone() }
-                            },
-                            ActiveTab::SnapshotHistory => rsx! {
-                                SnapshotTimelineTab { table: table.clone() }
-                            },
+                        if let Some(current_tab) = open_tabs().get(active_tab_index()) {
+                            match current_tab {
+                                AppTab::Catalog => rsx! {
+                                    CatalogBrowser {
+                                        catalog_manager: catalog_manager,
+                                        on_table_selected: load_table
+                                    }
+                                },
+                                AppTab::Table { table, .. } => rsx! {
+                                    // Table sub-tabs
+                                    div {
+                                        class: "mb-6",
+                                        nav {
+                                            class: "flex space-x-8 border-b border-gray-200",
+                                            button {
+                                                class: format!(
+                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
+                                                    if *table_view_tab.read() == TableViewTab::TableInfo {
+                                                        "border-blue-500 text-blue-600"
+                                                    } else {
+                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                    }
+                                                ),
+                                                onclick: move |_| table_view_tab.set(TableViewTab::TableInfo),
+                                                "📋 Table Information"
+                                            }
+                                            button {
+                                                class: format!(
+                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
+                                                    if *table_view_tab.read() == TableViewTab::SnapshotHistory {
+                                                        "border-blue-500 text-blue-600"
+                                                    } else {
+                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                    }
+                                                ),
+                                                onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
+                                                "📈 Snapshot History"
+                                            }
+                                        }
+                                    }
+
+                                    // Table content
+                                    match *table_view_tab.read() {
+                                        TableViewTab::TableInfo => rsx! {
+                                            TableInfoTab { table: table.clone() }
+                                        },
+                                        TableViewTab::SnapshotHistory => rsx! {
+                                            SnapshotTimelineTab { table: table.clone() }
+                                        },
+                                    }
+                                }
+                            }
                         }
                     }
                 }

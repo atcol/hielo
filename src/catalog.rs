@@ -187,7 +187,7 @@ impl CatalogManager {
 
     pub async fn list_namespaces(&self, catalog_name: &str) -> Result<Vec<String>, CatalogError> {
         log::info!("Listing namespaces for catalog: '{}'", catalog_name);
-        
+
         let connection = self
             .connections
             .iter()
@@ -198,7 +198,10 @@ impl CatalogManager {
                 CatalogError::ConnectionFailed(error)
             })?;
 
-        log::info!("Found catalog connection, catalog type: {:?}", connection.config.catalog_type);
+        log::info!(
+            "Found catalog connection, catalog type: {:?}",
+            connection.config.catalog_type
+        );
 
         let namespaces = connection
             .catalog
@@ -210,11 +213,14 @@ impl CatalogManager {
                 CatalogError::NetworkError(error)
             })?;
 
-        let namespace_strings: Vec<String> = namespaces.into_iter().map(|ns| {
-            let ns_string = ns.to_string();
-            log::info!("Found namespace: '{}'", ns_string);
-            ns_string
-        }).collect();
+        let namespace_strings: Vec<String> = namespaces
+            .into_iter()
+            .map(|ns| {
+                let ns_string = ns.to_string();
+                log::info!("Found namespace: '{}'", ns_string);
+                ns_string
+            })
+            .collect();
 
         log::info!("Returning {} namespaces", namespace_strings.len());
         Ok(namespace_strings)
@@ -225,8 +231,12 @@ impl CatalogManager {
         catalog_name: &str,
         namespace: &str,
     ) -> Result<Vec<TableReference>, CatalogError> {
-        log::info!("Listing tables for catalog: '{}', namespace: '{}'", catalog_name, namespace);
-        
+        log::info!(
+            "Listing tables for catalog: '{}', namespace: '{}'",
+            catalog_name,
+            namespace
+        );
+
         let connection = self
             .connections
             .iter()
@@ -237,10 +247,13 @@ impl CatalogManager {
                 CatalogError::ConnectionFailed(error)
             })?;
 
-        log::info!("Found catalog connection, catalog type: {:?}", connection.config.catalog_type);
+        log::info!(
+            "Found catalog connection, catalog type: {:?}",
+            connection.config.catalog_type
+        );
 
-        let namespace_ident = NamespaceIdent::from_vec(vec![namespace.to_string()])
-            .map_err(|e| {
+        let namespace_ident =
+            NamespaceIdent::from_vec(vec![namespace.to_string()]).map_err(|e| {
                 let error = format!("Invalid namespace '{}': {}", namespace, e);
                 log::error!("{}", error);
                 CatalogError::InvalidConfig(error)
@@ -258,7 +271,11 @@ impl CatalogManager {
                 CatalogError::NetworkError(error)
             })?;
 
-        log::info!("Found {} table identifiers in namespace '{}'", table_idents.len(), namespace);
+        log::info!(
+            "Found {} table identifiers in namespace '{}'",
+            table_idents.len(),
+            namespace
+        );
 
         let table_refs: Vec<TableReference> = table_idents
             .into_iter()
