@@ -1,6 +1,5 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
@@ -127,7 +126,7 @@ mod tests {
     use super::*;
     use crate::catalog::CatalogType;
     use std::collections::HashMap;
-    use tempfile::TempDir;
+    
 
     fn create_test_catalog() -> CatalogConfig {
         let mut config = HashMap::new();
