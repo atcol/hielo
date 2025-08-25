@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
 
+use crate::config::AppConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CatalogType {
     Rest,
@@ -88,13 +90,26 @@ impl CatalogConfig {
 
 pub struct CatalogManager {
     connections: Vec<CatalogConnection>,
+    config: AppConfig,
 }
 
 impl CatalogManager {
     pub fn new() -> Self {
+        let config = AppConfig::load().unwrap_or_default();
         Self {
             connections: Vec::new(),
+            config,
         }
+    }
+
+    /// Get saved catalog configurations
+    pub fn get_saved_catalogs(&self) -> &[CatalogConfig] {
+        &self.config.catalogs
+    }
+
+    /// Check if a catalog name is unique
+    pub fn is_catalog_name_unique(&self, name: &str) -> bool {
+        self.config.is_name_unique(name)
     }
 
     pub async fn connect_catalog(&mut self, config: CatalogConfig) -> Result<(), CatalogError> {
@@ -112,6 +127,19 @@ impl CatalogManager {
         self.connections
             .retain(|conn| conn.config.name != config.name);
         self.connections.push(connection);
+
+        // Save catalog configuration to persistent config
+        if let Err(e) = self.config.add_catalog(config) {
+            // If it's a duplicate name error, update instead of add
+            if e.to_string().contains("already exists") {
+                // For now, we'll just log this - in practice, the UI should prevent duplicates
+                log::warn!("Catalog name already exists in config: {}", e);
+            } else {
+                log::error!("Failed to save catalog configuration: {}", e);
+            }
+        } else {
+            log::info!("Catalog configuration saved successfully");
+        }
 
         Ok(())
     }

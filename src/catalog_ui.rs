@@ -51,6 +51,16 @@ pub fn CatalogConnectionScreen(
             main {
                 class: "max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8 space-y-6",
 
+                // Show saved catalogs if any exist
+                if !catalog_manager.read().get_saved_catalogs().is_empty() {
+                    SavedCatalogsSection {
+                        catalog_manager: catalog_manager,
+                        connection_status: connection_status,
+                        namespaces: namespaces,
+                        on_catalog_connected: on_catalog_connected,
+                    }
+                }
+
                 // Connection Form
                 div {
                     class: "bg-white shadow rounded-lg",
@@ -58,7 +68,11 @@ pub fn CatalogConnectionScreen(
                         class: "px-4 py-5 sm:p-6",
                         h3 {
                             class: "text-lg leading-6 font-medium text-gray-900 mb-4",
-                            "Connect to Iceberg Catalog"
+                            if !catalog_manager.read().get_saved_catalogs().is_empty() {
+                                "Add New Catalog"
+                            } else {
+                                "Connect to Iceberg Catalog"
+                            }
                         }
 
                         // Catalog Type Selection
@@ -149,6 +163,18 @@ fn RestCatalogForm(
 
     let connect = move |_| async move {
         connection_status.set(ConnectionStatus::Connecting);
+
+        // Check if name is unique
+        if !catalog_manager
+            .read()
+            .is_catalog_name_unique(&catalog_name())
+        {
+            connection_status.set(ConnectionStatus::Error(format!(
+                "Catalog name '{}' already exists. Please choose a different name.",
+                catalog_name()
+            )));
+            return;
+        }
 
         let mut config = HashMap::new();
         config.insert("uri".to_string(), uri());
@@ -285,6 +311,18 @@ fn GlueCatalogForm(
 
     let connect = move |_| async move {
         connection_status.set(ConnectionStatus::Connecting);
+
+        // Check if name is unique
+        if !catalog_manager
+            .read()
+            .is_catalog_name_unique(&catalog_name())
+        {
+            connection_status.set(ConnectionStatus::Error(format!(
+                "Catalog name '{}' already exists. Please choose a different name.",
+                catalog_name()
+            )));
+            return;
+        }
 
         let mut config = HashMap::new();
         config.insert("warehouse".to_string(), warehouse());
@@ -656,6 +694,114 @@ fn TableBrowser(
                                             }
                                         }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn SavedCatalogsSection(
+    catalog_manager: Signal<CatalogManager>,
+    connection_status: Signal<ConnectionStatus>,
+    namespaces: Signal<Vec<String>>,
+    on_catalog_connected: EventHandler<()>,
+) -> Element {
+    let connect_to_saved_catalog = move |catalog_config: crate::catalog::CatalogConfig| async move {
+        connection_status.set(ConnectionStatus::Connecting);
+
+        let connection_result = catalog_manager
+            .write()
+            .connect_catalog(catalog_config.clone())
+            .await;
+        match connection_result {
+            Ok(()) => {
+                connection_status.set(ConnectionStatus::Connected);
+                // Load namespaces
+                match catalog_manager
+                    .read()
+                    .list_namespaces(&catalog_config.name)
+                    .await
+                {
+                    Ok(ns) => {
+                        namespaces.set(ns);
+                        // Call the connected callback to switch to tabbed interface
+                        on_catalog_connected.call(());
+                    }
+                    Err(e) => connection_status.set(ConnectionStatus::Error(e.to_string())),
+                }
+            }
+            Err(e) => connection_status.set(ConnectionStatus::Error(e.to_string())),
+        }
+    };
+
+    rsx! {
+        div {
+            class: "bg-white shadow rounded-lg",
+            div {
+                class: "px-4 py-5 sm:p-6",
+                h3 {
+                    class: "text-lg leading-6 font-medium text-gray-900 mb-4",
+                    "Saved Catalogs"
+                }
+                p {
+                    class: "text-sm text-gray-500 mb-4",
+                    "Connect to a previously saved catalog or add a new one below."
+                }
+
+                div {
+                    class: "grid grid-cols-1 gap-3 sm:grid-cols-2",
+                    for catalog_config in catalog_manager.read().get_saved_catalogs() {
+                        div {
+                            class: "border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:bg-blue-50 transition-colors",
+                            div {
+                                class: "flex items-center justify-between mb-2",
+                                h4 {
+                                    class: "text-sm font-medium text-gray-900",
+                                    "{catalog_config.name}"
+                                }
+                                span {
+                                    class: match catalog_config.catalog_type {
+                                        CatalogType::Rest => "inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800",
+                                        CatalogType::Glue => "inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-orange-100 text-orange-800",
+                                    },
+                                    match catalog_config.catalog_type {
+                                        CatalogType::Rest => "REST",
+                                        CatalogType::Glue => "Glue",
+                                    }
+                                }
+                            }
+                            p {
+                                class: "text-xs text-gray-500 mb-3",
+                                match catalog_config.catalog_type {
+                                    CatalogType::Rest => format!("URI: {}", catalog_config.config.get("uri").unwrap_or(&"N/A".to_string())),
+                                    CatalogType::Glue => format!("Warehouse: {}", catalog_config.config.get("warehouse").unwrap_or(&"N/A".to_string())),
+                                }
+                            }
+                            button {
+                                onclick: {
+                                    let config = catalog_config.clone();
+                                    move |_| {
+                                        spawn(connect_to_saved_catalog(config.clone()));
+                                    }
+                                },
+                                disabled: matches!(connection_status(), ConnectionStatus::Connecting),
+                                class: format!(
+                                    "w-full flex justify-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white {}",
+                                    if matches!(connection_status(), ConnectionStatus::Connecting) {
+                                        "bg-gray-400 cursor-not-allowed"
+                                    } else {
+                                        "bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                                    }
+                                ),
+                                if matches!(connection_status(), ConnectionStatus::Connecting) {
+                                    "Connecting..."
+                                } else {
+                                    "Connect"
                                 }
                             }
                         }

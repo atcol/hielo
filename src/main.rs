@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 mod catalog;
 mod catalog_ui;
 mod components;
+mod config;
 mod data;
 mod iceberg_adapter;
 
