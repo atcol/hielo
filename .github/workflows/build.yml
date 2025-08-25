@@ -53,12 +53,12 @@ jobs:
             artifact_name: hielo
             asset_name: hielo-linux-x86_64
             
-          # Linux ARM64
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            artifact_name: hielo
-            asset_name: hielo-linux-aarch64
-            cross: true
+          # Linux ARM64 - temp disabled for now
+          #- target: aarch64-unknown-linux-gnu
+          #  os: ubuntu-latest
+          #  artifact_name: hielo
+          #  asset_name: hielo-linux-aarch64
+          #  cross: true
             
           # macOS x86_64
           - target: x86_64-apple-darwin
