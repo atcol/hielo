@@ -496,24 +496,34 @@ fn TableBrowser(
     tables: Signal<Vec<TableReference>>,
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
+    let mut loading_tables = use_signal(|| false);
     let load_tables = move |namespace: String| async move {
+        loading_tables.set(true);
         // Get the first catalog connection (assuming single connection for now)
         if let Some(connection) = catalog_manager.read().get_connections().first() {
+            log::info!("Loading tables for namespace: {} from catalog: {}", namespace, connection.config.name);
             match catalog_manager
                 .read()
                 .list_tables(&connection.config.name, &namespace)
                 .await
             {
                 Ok(table_list) => {
+                    log::info!("Successfully loaded {} tables for namespace: {}", table_list.len(), namespace);
                     tables.set(table_list);
                     selected_namespace.set(Some(namespace));
                 }
                 Err(e) => {
-                    log::error!("Failed to load tables: {}", e);
-                    // Could set error state here
+                    log::error!("Failed to load tables for namespace {}: {}", namespace, e);
+                    eprintln!("Failed to load tables for namespace {}: {}", namespace, e);
+                    // Clear tables on error
+                    tables.set(Vec::new());
                 }
             }
+        } else {
+            log::error!("No catalog connection found");
+            eprintln!("No catalog connection found");
         }
+        loading_tables.set(false);
     };
 
     rsx! {
@@ -540,12 +550,16 @@ fn TableBrowser(
                                 onclick: {
                                     let ns = namespace.clone();
                                     move |_| {
+                                        log::info!("Namespace button clicked: {}", ns);
                                         spawn(load_tables(ns.clone()));
                                     }
                                 },
+                                disabled: loading_tables(),
                                 class: format!(
-                                    "text-left px-4 py-2 border rounded-md {}",
-                                    if selected_namespace().as_ref() == Some(&namespace.clone()) {
+                                    "text-left px-4 py-2 border rounded-md transition-colors {}",
+                                    if loading_tables() {
+                                        "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed"
+                                    } else if selected_namespace().as_ref() == Some(&namespace.clone()) {
                                         "border-blue-500 bg-blue-50 text-blue-700"
                                     } else {
                                         "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
@@ -564,7 +578,18 @@ fn TableBrowser(
                             class: "text-md font-medium text-gray-900 mb-3",
                             "Tables in {current_namespace}"
                         }
-                        if tables().is_empty() {
+                        if loading_tables() {
+                            div {
+                                class: "flex items-center justify-center py-8",
+                                div {
+                                    class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"
+                                }
+                                span {
+                                    class: "text-sm text-gray-600",
+                                    "Loading tables..."
+                                }
+                            }
+                        } else if tables().is_empty() {
                             p {
                                 class: "text-sm text-gray-500 italic",
                                 "No tables found in this namespace"

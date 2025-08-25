@@ -186,21 +186,38 @@ impl CatalogManager {
     }
 
     pub async fn list_namespaces(&self, catalog_name: &str) -> Result<Vec<String>, CatalogError> {
+        log::info!("Listing namespaces for catalog: '{}'", catalog_name);
+        
         let connection = self
             .connections
             .iter()
             .find(|conn| conn.config.name == catalog_name)
             .ok_or_else(|| {
-                CatalogError::ConnectionFailed(format!("Catalog '{}' not found", catalog_name))
+                let error = format!("Catalog '{}' not found", catalog_name);
+                log::error!("{}", error);
+                CatalogError::ConnectionFailed(error)
             })?;
+
+        log::info!("Found catalog connection, catalog type: {:?}", connection.config.catalog_type);
 
         let namespaces = connection
             .catalog
             .list_namespaces(None)
             .await
-            .map_err(|e| CatalogError::NetworkError(format!("Failed to list namespaces: {}", e)))?;
+            .map_err(|e| {
+                let error = format!("Failed to list namespaces: {}", e);
+                log::error!("{}", error);
+                CatalogError::NetworkError(error)
+            })?;
 
-        Ok(namespaces.into_iter().map(|ns| ns.to_string()).collect())
+        let namespace_strings: Vec<String> = namespaces.into_iter().map(|ns| {
+            let ns_string = ns.to_string();
+            log::info!("Found namespace: '{}'", ns_string);
+            ns_string
+        }).collect();
+
+        log::info!("Returning {} namespaces", namespace_strings.len());
+        Ok(namespace_strings)
     }
 
     pub async fn list_tables(
@@ -208,31 +225,56 @@ impl CatalogManager {
         catalog_name: &str,
         namespace: &str,
     ) -> Result<Vec<TableReference>, CatalogError> {
+        log::info!("Listing tables for catalog: '{}', namespace: '{}'", catalog_name, namespace);
+        
         let connection = self
             .connections
             .iter()
             .find(|conn| conn.config.name == catalog_name)
             .ok_or_else(|| {
-                CatalogError::ConnectionFailed(format!("Catalog '{}' not found", catalog_name))
+                let error = format!("Catalog '{}' not found", catalog_name);
+                log::error!("{}", error);
+                CatalogError::ConnectionFailed(error)
             })?;
 
+        log::info!("Found catalog connection, catalog type: {:?}", connection.config.catalog_type);
+
         let namespace_ident = NamespaceIdent::from_vec(vec![namespace.to_string()])
-            .map_err(|e| CatalogError::InvalidConfig(format!("Invalid namespace: {}", e)))?;
+            .map_err(|e| {
+                let error = format!("Invalid namespace '{}': {}", namespace, e);
+                log::error!("{}", error);
+                CatalogError::InvalidConfig(error)
+            })?;
+
+        log::info!("Created namespace identifier: {:?}", namespace_ident);
 
         let table_idents = connection
             .catalog
             .list_tables(&namespace_ident)
             .await
-            .map_err(|e| CatalogError::NetworkError(format!("Failed to list tables: {}", e)))?;
+            .map_err(|e| {
+                let error = format!("Failed to list tables in namespace '{}': {}", namespace, e);
+                log::error!("{}", error);
+                CatalogError::NetworkError(error)
+            })?;
 
-        Ok(table_idents
+        log::info!("Found {} table identifiers in namespace '{}'", table_idents.len(), namespace);
+
+        let table_refs: Vec<TableReference> = table_idents
             .into_iter()
-            .map(|ident| TableReference {
-                namespace: namespace.to_string(),
-                name: ident.name().to_string(),
-                full_name: format!("{}.{}", namespace, ident.name()),
+            .map(|ident| {
+                let table_ref = TableReference {
+                    namespace: namespace.to_string(),
+                    name: ident.name().to_string(),
+                    full_name: format!("{}.{}", namespace, ident.name()),
+                };
+                log::info!("Table: {}", table_ref.full_name);
+                table_ref
             })
-            .collect())
+            .collect();
+
+        log::info!("Returning {} table references", table_refs.len());
+        Ok(table_refs)
     }
 
     pub async fn load_table(
