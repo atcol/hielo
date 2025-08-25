@@ -14,9 +14,17 @@ tokio = { version = "1.0", features = ["full"] }
 anyhow = "1.0"
 tracing = "0.1.41"
 log = "0.4.27"
+dirs = "5.0"
+iceberg-catalog-rest = "0.6.0"
+iceberg-catalog-glue = "0.6.0"
+iceberg = "0.6.0"
+url = "2.5.7"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[dev-dependencies]
+tempfile = "3.21.0"
