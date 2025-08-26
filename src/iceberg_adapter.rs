@@ -8,8 +8,14 @@ use std::collections::HashMap;
 pub fn convert_iceberg_table(table: &Table, namespace: String) -> Result<IcebergTable> {
     let metadata = table.metadata();
 
-    // Convert schema
+    // Convert current schema
     let schema = convert_schema(metadata.current_schema())?;
+
+    // Convert all schemas (current + historical)
+    let schemas = metadata
+        .schemas_iter()
+        .map(convert_schema)
+        .collect::<Result<Vec<_>>>()?;
 
     // Convert snapshots
     let snapshots = metadata
@@ -28,6 +34,7 @@ pub fn convert_iceberg_table(table: &Table, namespace: String) -> Result<Iceberg
         namespace,
         location: metadata.location().to_string(),
         schema,
+        schemas,
         snapshots,
         current_snapshot_id,
         properties,

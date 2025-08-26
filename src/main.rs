@@ -35,7 +35,13 @@ enum TableViewTab {
 
 fn main() {
     dioxus_logger::init(log::LevelFilter::Info).expect("failed to init logger");
-    launch(App);
+    
+    LaunchBuilder::desktop()
+        .with_cfg(dioxus::desktop::Config::new().with_window(
+            dioxus::desktop::WindowBuilder::new()
+                .with_title("Hielo - Apache Iceberg Table Viewer")
+        ))
+        .launch(App);
 }
 
 fn App() -> Element {

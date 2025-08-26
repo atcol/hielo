@@ -137,14 +137,14 @@ pub fn TableSchemaTab(table: IcebergTable) -> Element {
         div {
             class: "space-y-6",
 
-            // Schema
+            // Current Schema
             div {
                 class: "bg-white shadow rounded-lg",
                 div {
                     class: "px-4 py-5 sm:p-6",
                     h3 {
                         class: "text-lg leading-6 font-medium text-gray-900 mb-4",
-                        "Table Schema"
+                        "Current Schema (ID: {table.schema.schema_id})"
                     }
                     div {
                         class: "mb-4",
@@ -205,6 +205,182 @@ pub fn TableSchemaTab(table: IcebergTable) -> Element {
                                 class: "bg-white divide-y divide-gray-200",
                                 for field in &table.schema.fields {
                                     SchemaFieldRow { field: field.clone(), depth: 0 }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Schema Evolution (if multiple schemas exist)
+            if table.schemas.len() > 1 {
+                div {
+                    class: "bg-white shadow rounded-lg",
+                    div {
+                        class: "px-4 py-5 sm:p-6",
+                        h3 {
+                            class: "text-lg leading-6 font-medium text-gray-900 mb-4",
+                            "Schema Evolution"
+                        }
+                        p {
+                            class: "text-sm text-gray-500 mb-6",
+                            "This table has evolved over time. Compare schema versions to understand field additions, modifications, and other changes."
+                        }
+
+                        // Schema versions overview
+                        div {
+                            class: "mb-6",
+                            h4 {
+                                class: "text-md font-medium text-gray-900 mb-3",
+                                "Available Schema Versions"
+                            }
+                            div {
+                                class: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+                                for schema in &table.schemas {
+                                    div {
+                                        class: format!(
+                                            "border-2 rounded-lg p-4 {}",
+                                            if schema.schema_id == table.schema.schema_id {
+                                                "border-blue-500 bg-blue-50"
+                                            } else {
+                                                "border-gray-200 hover:border-gray-300"
+                                            }
+                                        ),
+                                        div {
+                                            class: "flex items-center justify-between mb-2",
+                                            h5 {
+                                                class: "text-sm font-medium text-gray-900",
+                                                "Schema {schema.schema_id}"
+                                            }
+                                            if schema.schema_id == table.schema.schema_id {
+                                                span {
+                                                    class: "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800",
+                                                    "CURRENT"
+                                                }
+                                            }
+                                        }
+                                        p {
+                                            class: "text-sm text-gray-600",
+                                            "{schema.fields.len()} fields"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Schema comparison
+                        div {
+                            h4 {
+                                class: "text-md font-medium text-gray-900 mb-3",
+                                "Schema Comparison"
+                            }
+                            div {
+                                class: "overflow-x-auto",
+                                table {
+                                    class: "min-w-full divide-y divide-gray-200",
+                                    thead {
+                                        class: "bg-gray-50",
+                                        tr {
+                                            th {
+                                                class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                                                "Field ID"
+                                            }
+                                            th {
+                                                class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                                                "Field Name"
+                                            }
+                                            for schema in &table.schemas {
+                                                th {
+                                                    class: format!(
+                                                        "px-6 py-3 text-left text-xs font-medium uppercase tracking-wider {}",
+                                                        if schema.schema_id == table.schema.schema_id {
+                                                            "text-blue-600 bg-blue-50"
+                                                        } else {
+                                                            "text-gray-500"
+                                                        }
+                                                    ),
+                                                    "Schema {schema.schema_id}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                    tbody {
+                                        class: "bg-white divide-y divide-gray-200",
+                                        {
+                                            // Collect all unique field IDs across all schemas
+                                            let mut all_field_ids = std::collections::HashSet::new();
+                                            for schema in &table.schemas {
+                                                for field in &schema.fields {
+                                                    all_field_ids.insert(field.id);
+                                                }
+                                            }
+                                            let mut sorted_field_ids: Vec<_> = all_field_ids.into_iter().collect();
+                                            sorted_field_ids.sort();
+
+                                            rsx! {
+                                                for field_id in sorted_field_ids {
+                                                    {
+                                                        // Find field name (use current schema or first available)
+                                                        let field_name = table.schemas.iter()
+                                                            .flat_map(|s| &s.fields)
+                                                            .find(|f| f.id == field_id)
+                                                            .map(|f| f.name.clone())
+                                                            .unwrap_or_else(|| format!("Field {}", field_id));
+                                                        
+                                                        rsx! {
+                                                            tr {
+                                                                td {
+                                                                    class: "px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900",
+                                                                    "{field_id}"
+                                                                }
+                                                                td {
+                                                                    class: "px-6 py-4 whitespace-nowrap text-sm text-gray-900",
+                                                                    "{field_name}"
+                                                                }
+                                                                for schema in &table.schemas {
+                                                                    td {
+                                                                        class: format!(
+                                                                            "px-6 py-4 whitespace-nowrap text-sm {}",
+                                                                            if schema.schema_id == table.schema.schema_id {
+                                                                                "bg-blue-50"
+                                                                            } else {
+                                                                                ""
+                                                                            }
+                                                                        ),
+                                                                        {
+                                                                            if let Some(field) = schema.fields.iter().find(|f| f.id == field_id) {
+                                                                                rsx! {
+                                                                                    div {
+                                                                                        span {
+                                                                                            class: "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800",
+                                                                                            "{field.field_type.to_string()}"
+                                                                                        }
+                                                                                        if field.required {
+                                                                                            span {
+                                                                                                class: "ml-1 inline-flex px-1 py-0 text-xs font-semibold rounded bg-red-100 text-red-800",
+                                                                                                "REQ"
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            } else {
+                                                                                rsx! {
+                                                                                    span {
+                                                                                        class: "text-gray-400 italic",
+                                                                                        "—"
+                                                                                    }
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
