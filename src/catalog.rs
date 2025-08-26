@@ -189,9 +189,13 @@ impl CatalogManager {
         let mut props = HashMap::new();
         props.insert("warehouse".to_string(), warehouse.clone());
 
-        if let Some(region) = config.config.get("region") {
-            props.insert("region".to_string(), region.clone());
-        }
+        // Region is required for Glue catalog - ensure it's always present
+        let region = config
+            .config
+            .get("region")
+            .cloned()
+            .unwrap_or_else(|| "us-east-1".to_string());
+        props.insert("region".to_string(), region);
 
         if let Some(profile) = config.config.get("profile") {
             props.insert("profile".to_string(), profile.clone());
@@ -203,11 +207,32 @@ impl CatalogManager {
 
         let glue_config = GlueCatalogConfig::builder()
             .warehouse(warehouse.clone())
-            .props(props)
+            .props(props.clone())
             .build();
 
+        log::info!(
+            "Creating Glue catalog with config - warehouse: '{}', region: '{}', props: {:?}",
+            warehouse,
+            props.get("region").unwrap_or(&"N/A".to_string()),
+            props.keys().collect::<Vec<_>>()
+        );
+
+        // Ensure region is available for AWS SDK - try multiple methods
+        if let Some(region) = props.get("region") {
+            // Set environment variables as fallback
+            unsafe {
+                std::env::set_var("AWS_DEFAULT_REGION", region);
+                std::env::set_var("AWS_REGION", region);
+            }
+            log::info!("Set AWS region environment variables to: {}", region);
+        } else {
+            log::warn!("No region found in Glue catalog configuration!");
+        }
+
         let catalog = GlueCatalog::new(glue_config).await.map_err(|e| {
-            CatalogError::ConnectionFailed(format!("Failed to create Glue catalog: {}", e))
+            let error = format!("Failed to create Glue catalog: {}", e);
+            log::error!("{}", error);
+            CatalogError::ConnectionFailed(error)
         })?;
 
         Ok(Arc::new(catalog))
@@ -328,23 +353,47 @@ impl CatalogManager {
         namespace: &str,
         table_name: &str,
     ) -> Result<Table, CatalogError> {
+        log::info!(
+            "Loading table: catalog='{}', namespace='{}', table='{}'",
+            catalog_name, namespace, table_name
+        );
+
         let connection = self
             .connections
             .iter()
             .find(|conn| conn.config.name == catalog_name)
             .ok_or_else(|| {
-                CatalogError::ConnectionFailed(format!("Catalog '{}' not found", catalog_name))
+                let error = format!("Catalog '{}' not found", catalog_name);
+                log::error!("{}", error);
+                CatalogError::ConnectionFailed(error)
             })?;
 
+        log::info!(
+            "Found catalog connection, type: {:?}, config: {:?}",
+            connection.config.catalog_type,
+            connection.config.config.keys().collect::<Vec<_>>()
+        );
+
         let table_ident = TableIdent::from_strs(vec![namespace, table_name])
-            .map_err(|e| CatalogError::InvalidConfig(format!("Invalid table identifier: {}", e)))?;
+            .map_err(|e| {
+                let error = format!("Invalid table identifier: {}", e);
+                log::error!("{}", error);
+                CatalogError::InvalidConfig(error)
+            })?;
+
+        log::info!("Table identifier created: {:?}", table_ident);
 
         let table = connection
             .catalog
             .load_table(&table_ident)
             .await
-            .map_err(|e| CatalogError::TableNotFound(format!("Failed to load table: {}", e)))?;
+            .map_err(|e| {
+                let error = format!("Failed to load table '{}': {}", table_ident, e);
+                log::error!("{}", error);
+                CatalogError::TableNotFound(error)
+            })?;
 
+        log::info!("Table loaded successfully: {}", table_ident);
         Ok(table)
     }
 
