@@ -11,7 +11,7 @@ mod iceberg_adapter;
 
 use catalog::CatalogManager;
 use catalog_ui::{CatalogBrowser, CatalogConnectionScreen};
-use components::{SnapshotTimelineTab, TableOverviewTab, TableSchemaTab};
+use components::{SnapshotTimelineTab, TableOverviewTab, TablePartitionsTab, TableSchemaTab};
 use data::IcebergTable;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,16 +30,16 @@ enum AppTab {
 enum TableViewTab {
     Overview,
     Schema,
+    Partitions,
     SnapshotHistory,
 }
 
 fn main() {
     dioxus_logger::init(log::LevelFilter::Info).expect("failed to init logger");
-    
+
     LaunchBuilder::desktop()
         .with_cfg(dioxus::desktop::Config::new().with_window(
-            dioxus::desktop::WindowBuilder::new()
-                .with_title("Hielo - Apache Iceberg Table Viewer")
+            dioxus::desktop::WindowBuilder::new().with_title("Hielo - Apache Iceberg Table Viewer"),
         ))
         .launch(App);
 }
@@ -316,6 +316,20 @@ fn App() -> Element {
                                                 onclick: move |_| table_view_tab.set(TableViewTab::Schema),
                                                 "🏗️ Schema"
                                             }
+                                            if table.partition_spec.is_some() {
+                                                button {
+                                                    class: format!(
+                                                        "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
+                                                        if *table_view_tab.read() == TableViewTab::Partitions {
+                                                            "border-blue-500 text-blue-600"
+                                                        } else {
+                                                            "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                        }
+                                                    ),
+                                                    onclick: move |_| table_view_tab.set(TableViewTab::Partitions),
+                                                    "🧩 Partitions"
+                                                }
+                                            }
                                             button {
                                                 class: format!(
                                                     "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
@@ -338,6 +352,9 @@ fn App() -> Element {
                                         },
                                         TableViewTab::Schema => rsx! {
                                             TableSchemaTab { table: table.clone() }
+                                        },
+                                        TableViewTab::Partitions => rsx! {
+                                            TablePartitionsTab { table: table.clone() }
                                         },
                                         TableViewTab::SnapshotHistory => rsx! {
                                             SnapshotTimelineTab { table: table.clone() }

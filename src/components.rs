@@ -1,4 +1,4 @@
-use crate::data::{DataType, IcebergTable, NestedField};
+use crate::data::{DataType, IcebergTable, NestedField, PartitionField};
 use dioxus::prelude::*;
 
 #[component]
@@ -326,7 +326,7 @@ pub fn TableSchemaTab(table: IcebergTable) -> Element {
                                                             .find(|f| f.id == field_id)
                                                             .map(|f| f.name.clone())
                                                             .unwrap_or_else(|| format!("Field {}", field_id));
-                                                        
+
                                                         rsx! {
                                                             tr {
                                                                 td {
@@ -643,6 +643,139 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn TablePartitionsTab(table: IcebergTable) -> Element {
+    rsx! {
+        div {
+            class: "space-y-6",
+
+            // Current Partition Spec
+            if let Some(partition_spec) = &table.partition_spec {
+                div {
+                    class: "bg-white shadow rounded-lg",
+                    div {
+                        class: "px-4 py-5 sm:p-6",
+                        h3 {
+                            class: "text-lg leading-6 font-medium text-gray-900 mb-4",
+                            "Current Partition Specification (ID: {partition_spec.spec_id})"
+                        }
+                        div {
+                            class: "mb-4",
+                            dl {
+                                class: "grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2",
+                                div {
+                                    dt {
+                                        class: "text-sm font-medium text-gray-500",
+                                        "Spec ID"
+                                    }
+                                    dd {
+                                        class: "mt-1 text-sm text-gray-900",
+                                        "{partition_spec.spec_id}"
+                                    }
+                                }
+                                div {
+                                    dt {
+                                        class: "text-sm font-medium text-gray-500",
+                                        "Partition Fields"
+                                    }
+                                    dd {
+                                        class: "mt-1 text-sm text-gray-900",
+                                        "{partition_spec.fields.len()}"
+                                    }
+                                }
+                            }
+                        }
+                        div {
+                            class: "overflow-x-auto",
+                            table {
+                                class: "min-w-full divide-y divide-gray-200",
+                                thead {
+                                    class: "bg-gray-50",
+                                    tr {
+                                        th {
+                                            class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                                            "Field ID"
+                                        }
+                                        th {
+                                            class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                                            "Source Field"
+                                        }
+                                        th {
+                                            class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                                            "Name"
+                                        }
+                                        th {
+                                            class: "px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider",
+                                            "Transform"
+                                        }
+                                    }
+                                }
+                                tbody {
+                                    class: "bg-white divide-y divide-gray-200",
+                                    for field in &partition_spec.fields {
+                                        PartitionFieldRow { field: field.clone(), table: table.clone() }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                div {
+                    class: "bg-white shadow rounded-lg",
+                    div {
+                        class: "px-4 py-5 sm:p-6 text-center",
+                        h3 {
+                            class: "text-lg font-medium text-gray-900 mb-2",
+                            "No Partitioning"
+                        }
+                        p {
+                            class: "text-sm text-gray-500",
+                            "This table is not partitioned. All data is stored without partitioning strategy."
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn PartitionFieldRow(field: PartitionField, table: IcebergTable) -> Element {
+    // Find the source field name from the schema
+    let source_field_name = table
+        .schema
+        .fields
+        .iter()
+        .find(|f| f.id == field.source_id)
+        .map(|f| f.name.clone())
+        .unwrap_or_else(|| format!("Field {}", field.source_id));
+
+    rsx! {
+        tr {
+            td {
+                class: "px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900",
+                "{field.field_id}"
+            }
+            td {
+                class: "px-6 py-4 whitespace-nowrap text-sm text-gray-900",
+                "{source_field_name}"
+            }
+            td {
+                class: "px-6 py-4 whitespace-nowrap text-sm text-gray-900",
+                "{field.name}"
+            }
+            td {
+                class: "px-6 py-4 whitespace-nowrap text-sm text-gray-500",
+                span {
+                    class: "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800",
+                    {field.transform.to_string()}
                 }
             }
         }

@@ -355,7 +355,9 @@ impl CatalogManager {
     ) -> Result<Table, CatalogError> {
         log::info!(
             "Loading table: catalog='{}', namespace='{}', table='{}'",
-            catalog_name, namespace, table_name
+            catalog_name,
+            namespace,
+            table_name
         );
 
         let connection = self
@@ -374,12 +376,11 @@ impl CatalogManager {
             connection.config.config.keys().collect::<Vec<_>>()
         );
 
-        let table_ident = TableIdent::from_strs(vec![namespace, table_name])
-            .map_err(|e| {
-                let error = format!("Invalid table identifier: {}", e);
-                log::error!("{}", error);
-                CatalogError::InvalidConfig(error)
-            })?;
+        let table_ident = TableIdent::from_strs(vec![namespace, table_name]).map_err(|e| {
+            let error = format!("Invalid table identifier: {}", e);
+            log::error!("{}", error);
+            CatalogError::InvalidConfig(error)
+        })?;
 
         log::info!("Table identifier created: {:?}", table_ident);
 

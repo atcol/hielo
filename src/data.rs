@@ -12,6 +12,8 @@ pub struct IcebergTable {
     pub snapshots: Vec<Snapshot>,
     pub current_snapshot_id: Option<u64>,
     pub properties: HashMap<String, String>,
+    pub partition_spec: Option<PartitionSpec>,
+    pub partition_specs: Vec<PartitionSpec>, // Historical partition specs
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -102,6 +104,47 @@ pub struct Summary {
     pub added_files_size: Option<String>,
     pub removed_files_size: Option<String>,
     pub total_size: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PartitionSpec {
+    pub spec_id: i32,
+    pub fields: Vec<PartitionField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PartitionField {
+    pub source_id: i32,
+    pub field_id: i32,
+    pub name: String,
+    pub transform: PartitionTransform,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PartitionTransform {
+    Identity,
+    Bucket { num_buckets: i32 },
+    Truncate { width: i32 },
+    Year,
+    Month,
+    Day,
+    Hour,
+    Void,
+}
+
+impl PartitionTransform {
+    pub fn to_string(&self) -> String {
+        match self {
+            PartitionTransform::Identity => "identity".to_string(),
+            PartitionTransform::Bucket { num_buckets } => format!("bucket[{}]", num_buckets),
+            PartitionTransform::Truncate { width } => format!("truncate[{}]", width),
+            PartitionTransform::Year => "year".to_string(),
+            PartitionTransform::Month => "month".to_string(),
+            PartitionTransform::Day => "day".to_string(),
+            PartitionTransform::Hour => "hour".to_string(),
+            PartitionTransform::Void => "void".to_string(),
+        }
+    }
 }
 
 impl Snapshot {
@@ -242,7 +285,7 @@ pub fn generate_sample_table() -> IcebergTable {
     };
 
     let schemas = vec![
-        schema_v1, // Historical schema
+        schema_v1,      // Historical schema
         schema.clone(), // Current schema
     ];
 
@@ -351,6 +394,19 @@ pub fn generate_sample_table() -> IcebergTable {
         "8388608".to_string(),
     );
 
+    // Create sample partition specs - tables are often partitioned by date fields
+    let current_partition_spec = PartitionSpec {
+        spec_id: 1,
+        fields: vec![PartitionField {
+            source_id: 3, // created_at field
+            field_id: 1000,
+            name: "created_date".to_string(),
+            transform: PartitionTransform::Day,
+        }],
+    };
+
+    let partition_specs = vec![current_partition_spec.clone()];
+
     IcebergTable {
         name: "users".to_string(),
         namespace: "analytics.prod".to_string(),
@@ -360,5 +416,7 @@ pub fn generate_sample_table() -> IcebergTable {
         snapshots,
         current_snapshot_id: Some(1005),
         properties,
+        partition_spec: Some(current_partition_spec),
+        partition_specs,
     }
 }
