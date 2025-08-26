@@ -78,12 +78,6 @@ jobs:
             artifact_name: hielo.exe
             asset_name: hielo-windows-x86_64.exe
 
-          # Web (wasm)
-          - target: wasm32-unknown-unknown
-            os: ubuntu-latest
-            artifact_name: hielo
-            asset_name: hielo-web-wasm32
-
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
