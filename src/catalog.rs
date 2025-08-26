@@ -189,9 +189,11 @@ impl CatalogManager {
         let mut props = HashMap::new();
         props.insert("warehouse".to_string(), warehouse.clone());
 
-        if let Some(region) = config.config.get("region") {
-            props.insert("region".to_string(), region.clone());
-        }
+        // Region is required for Glue catalog - ensure it's always present
+        let region = config.config.get("region")
+            .cloned()
+            .unwrap_or_else(|| "us-east-1".to_string());
+        props.insert("region".to_string(), region);
 
         if let Some(profile) = config.config.get("profile") {
             props.insert("profile".to_string(), profile.clone());
