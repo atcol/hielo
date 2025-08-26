@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub struct IcebergTable {
     pub name: String,
     pub namespace: String,
+    pub catalog_name: String, // Track which catalog this table came from
     pub location: String,
     pub schema: TableSchema,
     pub schemas: Vec<TableSchema>, // Historical schemas
@@ -410,6 +411,7 @@ pub fn generate_sample_table() -> IcebergTable {
     IcebergTable {
         name: "users".to_string(),
         namespace: "analytics.prod".to_string(),
+        catalog_name: "sample".to_string(),
         location: "s3://data-lake/warehouse/analytics/prod/users".to_string(),
         schema,
         schemas,
