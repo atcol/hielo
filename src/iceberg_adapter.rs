@@ -111,7 +111,7 @@ fn convert_primitive_type(primitive: &PrimitiveType) -> DataType {
 }
 
 fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
-    let summary = Some(convert_summary(&snapshot.summary().additional_properties));
+    let summary = Some(convert_summary(snapshot, &snapshot.summary().additional_properties));
 
     Ok(Snapshot {
         snapshot_id: snapshot.snapshot_id() as u64,
@@ -122,12 +122,33 @@ fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
     })
 }
 
-fn convert_summary(summary: &HashMap<String, String>) -> Summary {
+fn convert_summary(_snapshot: &iceberg::spec::Snapshot, summary: &HashMap<String, String>) -> Summary {
+    // Log available summary keys for debugging
+    log::debug!("Snapshot summary keys: {:?}", summary.keys().collect::<Vec<_>>());
+    
+    // Try to get operation from different sources
+    let operation = summary
+        .get("operation")
+        .cloned()
+        .or_else(|| summary.get("spark.app.id").map(|_| "append".to_string())) // Spark usually does appends
+        .or_else(|| {
+            // Try to infer operation from snapshot summary data
+            if summary.contains_key("added-data-files") || summary.contains_key("added-records") {
+                Some("append".to_string())
+            } else if summary.contains_key("deleted-data-files") || summary.contains_key("deleted-records") {
+                Some("delete".to_string()) 
+            } else if summary.contains_key("total-data-files") {
+                Some("overwrite".to_string())
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| "append".to_string()); // Default to append as it's most common
+
+    log::debug!("Inferred operation: {}", operation);
+
     Summary {
-        operation: summary
-            .get("operation")
-            .cloned()
-            .unwrap_or_else(|| "unknown".to_string()),
+        operation,
         added_data_files: summary.get("added-data-files").cloned(),
         deleted_data_files: summary.get("deleted-data-files").cloned(),
         added_records: summary.get("added-records").cloned(),

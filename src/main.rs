@@ -11,7 +11,7 @@ mod iceberg_adapter;
 
 use catalog::CatalogManager;
 use catalog_ui::{CatalogBrowser, CatalogConnectionScreen};
-use components::{SnapshotTimelineTab, TableInfoTab};
+use components::{SnapshotTimelineTab, TableOverviewTab, TableSchemaTab};
 use data::IcebergTable;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +28,8 @@ enum AppTab {
 
 #[derive(Debug, Clone, PartialEq)]
 enum TableViewTab {
-    TableInfo,
+    Overview,
+    Schema,
     SnapshotHistory,
 }
 
@@ -41,7 +42,7 @@ fn App() -> Element {
     let mut app_state = use_signal(|| AppState::CatalogConnection);
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
-    let mut table_view_tab = use_signal(|| TableViewTab::TableInfo);
+    let mut table_view_tab = use_signal(|| TableViewTab::Overview);
     let catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
@@ -288,14 +289,26 @@ fn App() -> Element {
                                             button {
                                                 class: format!(
                                                     "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                                    if *table_view_tab.read() == TableViewTab::TableInfo {
+                                                    if *table_view_tab.read() == TableViewTab::Overview {
                                                         "border-blue-500 text-blue-600"
                                                     } else {
                                                         "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                                     }
                                                 ),
-                                                onclick: move |_| table_view_tab.set(TableViewTab::TableInfo),
-                                                "📋 Table Information"
+                                                onclick: move |_| table_view_tab.set(TableViewTab::Overview),
+                                                "📊 Overview"
+                                            }
+                                            button {
+                                                class: format!(
+                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
+                                                    if *table_view_tab.read() == TableViewTab::Schema {
+                                                        "border-blue-500 text-blue-600"
+                                                    } else {
+                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                    }
+                                                ),
+                                                onclick: move |_| table_view_tab.set(TableViewTab::Schema),
+                                                "🏗️ Schema"
                                             }
                                             button {
                                                 class: format!(
@@ -314,8 +327,11 @@ fn App() -> Element {
 
                                     // Table content
                                     match *table_view_tab.read() {
-                                        TableViewTab::TableInfo => rsx! {
-                                            TableInfoTab { table: table.clone() }
+                                        TableViewTab::Overview => rsx! {
+                                            TableOverviewTab { table: table.clone() }
+                                        },
+                                        TableViewTab::Schema => rsx! {
+                                            TableSchemaTab { table: table.clone() }
                                         },
                                         TableViewTab::SnapshotHistory => rsx! {
                                             SnapshotTimelineTab { table: table.clone() }
@@ -333,39 +349,6 @@ fn App() -> Element {
         style {
             "
             @import url('https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
-            
-            .timeline-item {{
-                position: relative;
-                padding-left: 2rem;
-                margin-bottom: 2rem;
-            }}
-            
-            .timeline-item::before {{
-                content: '';
-                position: absolute;
-                left: 0.5rem;
-                top: 0.5rem;
-                width: 0.75rem;
-                height: 0.75rem;
-                background-color: #3b82f6;
-                border-radius: 50%;
-                border: 2px solid white;
-                box-shadow: 0 0 0 2px #3b82f6;
-            }}
-            
-            .timeline-item::after {{
-                content: '';
-                position: absolute;
-                left: 0.875rem;
-                top: 1.25rem;
-                width: 2px;
-                height: calc(100% + 1rem);
-                background-color: #e5e7eb;
-            }}
-            
-            .timeline-item:last-child::after {{
-                display: none;
-            }}
             "
         }
     }
