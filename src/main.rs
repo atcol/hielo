@@ -11,7 +11,7 @@ mod iceberg_adapter;
 
 use catalog::CatalogManager;
 use catalog_ui::{CatalogBrowser, CatalogConnectionScreen};
-use components::{SnapshotTimelineTab, TableInfoTab};
+use components::{SnapshotTimelineTab, TableOverviewTab, TableSchemaTab};
 use data::IcebergTable;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,20 +28,27 @@ enum AppTab {
 
 #[derive(Debug, Clone, PartialEq)]
 enum TableViewTab {
-    TableInfo,
+    Overview,
+    Schema,
     SnapshotHistory,
 }
 
 fn main() {
     dioxus_logger::init(log::LevelFilter::Info).expect("failed to init logger");
-    launch(App);
+    
+    LaunchBuilder::desktop()
+        .with_cfg(dioxus::desktop::Config::new().with_window(
+            dioxus::desktop::WindowBuilder::new()
+                .with_title("Hielo - Apache Iceberg Table Viewer")
+        ))
+        .launch(App);
 }
 
 fn App() -> Element {
     let mut app_state = use_signal(|| AppState::CatalogConnection);
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
-    let mut table_view_tab = use_signal(|| TableViewTab::TableInfo);
+    let mut table_view_tab = use_signal(|| TableViewTab::Overview);
     let catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
@@ -288,14 +295,26 @@ fn App() -> Element {
                                             button {
                                                 class: format!(
                                                     "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                                    if *table_view_tab.read() == TableViewTab::TableInfo {
+                                                    if *table_view_tab.read() == TableViewTab::Overview {
                                                         "border-blue-500 text-blue-600"
                                                     } else {
                                                         "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                                                     }
                                                 ),
-                                                onclick: move |_| table_view_tab.set(TableViewTab::TableInfo),
-                                                "📋 Table Information"
+                                                onclick: move |_| table_view_tab.set(TableViewTab::Overview),
+                                                "📊 Overview"
+                                            }
+                                            button {
+                                                class: format!(
+                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
+                                                    if *table_view_tab.read() == TableViewTab::Schema {
+                                                        "border-blue-500 text-blue-600"
+                                                    } else {
+                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                    }
+                                                ),
+                                                onclick: move |_| table_view_tab.set(TableViewTab::Schema),
+                                                "🏗️ Schema"
                                             }
                                             button {
                                                 class: format!(
@@ -314,8 +333,11 @@ fn App() -> Element {
 
                                     // Table content
                                     match *table_view_tab.read() {
-                                        TableViewTab::TableInfo => rsx! {
-                                            TableInfoTab { table: table.clone() }
+                                        TableViewTab::Overview => rsx! {
+                                            TableOverviewTab { table: table.clone() }
+                                        },
+                                        TableViewTab::Schema => rsx! {
+                                            TableSchemaTab { table: table.clone() }
                                         },
                                         TableViewTab::SnapshotHistory => rsx! {
                                             SnapshotTimelineTab { table: table.clone() }

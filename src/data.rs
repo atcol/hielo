@@ -8,6 +8,7 @@ pub struct IcebergTable {
     pub namespace: String,
     pub location: String,
     pub schema: TableSchema,
+    pub schemas: Vec<TableSchema>, // Historical schemas
     pub snapshots: Vec<Snapshot>,
     pub current_snapshot_id: Option<u64>,
     pub properties: HashMap<String, String>,
@@ -144,7 +145,7 @@ pub fn generate_sample_table() -> IcebergTable {
     let now = Utc::now();
 
     let schema = TableSchema {
-        schema_id: 1,
+        schema_id: 2, // Current schema version
         fields: vec![
             NestedField {
                 id: 1,
@@ -210,6 +211,40 @@ pub fn generate_sample_table() -> IcebergTable {
             },
         ],
     };
+
+    // Create historical schemas to show evolution
+    let schema_v1 = TableSchema {
+        schema_id: 1, // Original schema version
+        fields: vec![
+            NestedField {
+                id: 1,
+                name: "user_id".to_string(),
+                required: true,
+                field_type: DataType::Long,
+                doc: Some("Unique identifier for the user".to_string()),
+            },
+            NestedField {
+                id: 2,
+                name: "email".to_string(),
+                required: true,
+                field_type: DataType::String,
+                doc: Some("User's email address".to_string()),
+            },
+            NestedField {
+                id: 3,
+                name: "created_at".to_string(),
+                required: true,
+                field_type: DataType::TimestampTz,
+                doc: Some("Account creation timestamp".to_string()),
+            },
+            // Note: Original schema did not have profile field
+        ],
+    };
+
+    let schemas = vec![
+        schema_v1, // Historical schema
+        schema.clone(), // Current schema
+    ];
 
     let snapshots = vec![
         Snapshot {
@@ -321,6 +356,7 @@ pub fn generate_sample_table() -> IcebergTable {
         namespace: "analytics.prod".to_string(),
         location: "s3://data-lake/warehouse/analytics/prod/users".to_string(),
         schema,
+        schemas,
         snapshots,
         current_snapshot_id: Some(1005),
         properties,
