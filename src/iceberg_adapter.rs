@@ -1,6 +1,9 @@
-use crate::data::{DataType, IcebergTable, NestedField, Snapshot, Summary, TableSchema};
+use crate::data::{
+    DataType, IcebergTable, NestedField, PartitionField, PartitionSpec, PartitionTransform,
+    Snapshot, Summary, TableSchema,
+};
 use anyhow::Result;
-use iceberg::spec::{PrimitiveType, SchemaRef, Type};
+use iceberg::spec::{PartitionSpecRef, PrimitiveType, SchemaRef, Transform, Type};
 use iceberg::table::Table;
 use std::collections::HashMap;
 
@@ -29,6 +32,19 @@ pub fn convert_iceberg_table(table: &Table, namespace: String) -> Result<Iceberg
     // Get current snapshot ID
     let current_snapshot_id = metadata.current_snapshot().map(|s| s.snapshot_id() as u64);
 
+    // Convert current partition spec
+    let partition_spec = if metadata.default_partition_spec().fields().is_empty() {
+        None
+    } else {
+        Some(convert_partition_spec(metadata.default_partition_spec())?)
+    };
+
+    // Convert all partition specs (current + historical)
+    let partition_specs = metadata
+        .partition_specs_iter()
+        .map(convert_partition_spec)
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(IcebergTable {
         name: table.identifier().name().to_string(),
         namespace,
@@ -38,6 +54,8 @@ pub fn convert_iceberg_table(table: &Table, namespace: String) -> Result<Iceberg
         snapshots,
         current_snapshot_id,
         properties,
+        partition_spec,
+        partition_specs,
     })
 }
 
@@ -118,7 +136,10 @@ fn convert_primitive_type(primitive: &PrimitiveType) -> DataType {
 }
 
 fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
-    let summary = Some(convert_summary(snapshot, &snapshot.summary().additional_properties));
+    let summary = Some(convert_summary(
+        snapshot,
+        &snapshot.summary().additional_properties,
+    ));
 
     Ok(Snapshot {
         snapshot_id: snapshot.snapshot_id() as u64,
@@ -129,10 +150,16 @@ fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
     })
 }
 
-fn convert_summary(_snapshot: &iceberg::spec::Snapshot, summary: &HashMap<String, String>) -> Summary {
+fn convert_summary(
+    _snapshot: &iceberg::spec::Snapshot,
+    summary: &HashMap<String, String>,
+) -> Summary {
     // Log available summary keys for debugging
-    log::debug!("Snapshot summary keys: {:?}", summary.keys().collect::<Vec<_>>());
-    
+    log::debug!(
+        "Snapshot summary keys: {:?}",
+        summary.keys().collect::<Vec<_>>()
+    );
+
     // Try to get operation from different sources
     let operation = summary
         .get("operation")
@@ -142,8 +169,10 @@ fn convert_summary(_snapshot: &iceberg::spec::Snapshot, summary: &HashMap<String
             // Try to infer operation from snapshot summary data
             if summary.contains_key("added-data-files") || summary.contains_key("added-records") {
                 Some("append".to_string())
-            } else if summary.contains_key("deleted-data-files") || summary.contains_key("deleted-records") {
-                Some("delete".to_string()) 
+            } else if summary.contains_key("deleted-data-files")
+                || summary.contains_key("deleted-records")
+            {
+                Some("delete".to_string())
             } else if summary.contains_key("total-data-files") {
                 Some("overwrite".to_string())
             } else {
@@ -164,6 +193,47 @@ fn convert_summary(_snapshot: &iceberg::spec::Snapshot, summary: &HashMap<String
         added_files_size: summary.get("added-files-size").cloned(),
         removed_files_size: summary.get("removed-files-size").cloned(),
         total_size: summary.get("total-size").cloned(),
+    }
+}
+
+fn convert_partition_spec(spec: &PartitionSpecRef) -> Result<PartitionSpec> {
+    let fields = spec
+        .fields()
+        .iter()
+        .map(convert_partition_field)
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(PartitionSpec {
+        spec_id: spec.spec_id(),
+        fields,
+    })
+}
+
+fn convert_partition_field(field: &iceberg::spec::PartitionField) -> Result<PartitionField> {
+    Ok(PartitionField {
+        source_id: field.source_id,
+        field_id: field.field_id,
+        name: field.name.clone(),
+        transform: convert_transform(&field.transform)?,
+    })
+}
+
+fn convert_transform(transform: &Transform) -> Result<PartitionTransform> {
+    match transform {
+        Transform::Identity => Ok(PartitionTransform::Identity),
+        Transform::Bucket(num_buckets) => Ok(PartitionTransform::Bucket {
+            num_buckets: *num_buckets as i32,
+        }),
+        Transform::Truncate(width) => Ok(PartitionTransform::Truncate {
+            width: *width as i32,
+        }),
+        Transform::Year => Ok(PartitionTransform::Year),
+        Transform::Month => Ok(PartitionTransform::Month),
+        Transform::Day => Ok(PartitionTransform::Day),
+        Transform::Hour => Ok(PartitionTransform::Hour),
+        Transform::Void => Ok(PartitionTransform::Void),
+        // Handle any other transform variants that might exist
+        _ => Ok(PartitionTransform::Identity), // Default fallback
     }
 }
 
