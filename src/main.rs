@@ -349,6 +349,39 @@ fn App() -> Element {
         style {
             "
             @import url('https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css');
+            
+            .timeline-item {{
+                position: relative;
+                padding-left: 2rem;
+                margin-bottom: 2rem;
+            }}
+            
+            .timeline-item::before {{
+                content: '';
+                position: absolute;
+                left: 0.5rem;
+                top: 0.5rem;
+                width: 0.75rem;
+                height: 0.75rem;
+                background-color: #3b82f6;
+                border-radius: 50%;
+                border: 2px solid white;
+                box-shadow: 0 0 0 2px #3b82f6;
+            }}
+            
+            .timeline-item::after {{
+                content: '';
+                position: absolute;
+                left: 0.875rem;
+                top: 1.25rem;
+                width: 2px;
+                height: calc(100% + 1rem);
+                background-color: #e5e7eb;
+            }}
+            
+            .timeline-item:last-child::after {{
+                display: none;
+            }}
             "
         }
     }

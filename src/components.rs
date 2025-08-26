@@ -270,6 +270,8 @@ pub fn SchemaFieldRow(field: NestedField, depth: usize) -> Element {
 
 #[component]
 pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
+    let mut sorted_snapshots = table.snapshots.clone();
+    sorted_snapshots.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms)); // Most recent first
 
     rsx! {
         div {
@@ -334,6 +336,132 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                                         format!("{} days", days)
                                     } else {
                                         "N/A".to_string()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Detailed Timeline
+            div {
+                class: "bg-white shadow rounded-lg",
+                div {
+                    class: "px-4 py-5 sm:p-6",
+                    h3 {
+                        class: "text-lg leading-6 font-medium text-gray-900 mb-2",
+                        "Snapshot Timeline"
+                    }
+                    p {
+                        class: "text-sm text-gray-500 mb-6",
+                        "Detailed history showing all table snapshots from most recent to oldest"
+                    }
+                    div {
+                        class: "flow-root",
+                        ul {
+                            role: "list",
+                            class: "relative",
+                            for (index, snapshot) in sorted_snapshots.iter().enumerate() {
+                                li {
+                                    class: "timeline-item",
+                                    div {
+                                        class: "relative flex space-x-3",
+                                        div {
+                                            class: "min-w-0 flex-1",
+                                            div {
+                                                class: "flex items-center justify-between",
+                                                div {
+                                                    class: "flex items-center space-x-3",
+                                                    h4 {
+                                                        class: "text-sm font-medium text-gray-900",
+                                                        "Snapshot {snapshot.snapshot_id}"
+                                                    }
+                                                    span {
+                                                        class: format!(
+                                                            "inline-flex px-2 py-1 text-xs font-semibold rounded-full {}",
+                                                            match snapshot.operation().as_str() {
+                                                                "append" => "bg-green-100 text-green-800",
+                                                                "overwrite" => "bg-yellow-100 text-yellow-800",
+                                                                "delete" => "bg-red-100 text-red-800",
+                                                                _ => "bg-gray-100 text-gray-800",
+                                                            }
+                                                        ),
+                                                        "{snapshot.operation()}"
+                                                    }
+                                                    if table.current_snapshot_id == Some(snapshot.snapshot_id) {
+                                                        span {
+                                                            class: "inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800",
+                                                            "CURRENT"
+                                                        }
+                                                    }
+                                                }
+                                                p {
+                                                    class: "text-sm text-gray-500",
+                                                    {snapshot.timestamp().format("%Y-%m-%d %H:%M:%S UTC").to_string()}
+                                                }
+                                            }
+                                            div {
+                                                class: "mt-2 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-4",
+                                                div {
+                                                    class: "text-sm",
+                                                    span {
+                                                        class: "font-medium text-gray-500",
+                                                        "Records Added: "
+                                                    }
+                                                    span {
+                                                        class: "text-gray-900",
+                                                        "{snapshot.records_added()}"
+                                                    }
+                                                }
+                                                div {
+                                                    class: "text-sm",
+                                                    span {
+                                                        class: "font-medium text-gray-500",
+                                                        "Size Change: "
+                                                    }
+                                                    span {
+                                                        class: "text-gray-900",
+                                                        "{snapshot.size_change()}"
+                                                    }
+                                                }
+                                                if let Some(summary) = &snapshot.summary {
+                                                    div {
+                                                        class: "text-sm",
+                                                        span {
+                                                            class: "font-medium text-gray-500",
+                                                            "Files Added: "
+                                                        }
+                                                        span {
+                                                            class: "text-gray-900",
+                                                            {summary.added_data_files.clone().unwrap_or_else(|| "0".to_string())}
+                                                        }
+                                                    }
+                                                    div {
+                                                        class: "text-sm",
+                                                        span {
+                                                            class: "font-medium text-gray-500",
+                                                            "Total Records: "
+                                                        }
+                                                        span {
+                                                            class: "text-gray-900",
+                                                            {summary.total_records.clone().unwrap_or_else(|| "N/A".to_string())}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if let Some(summary) = &snapshot.summary {
+                                                if !snapshot.manifest_list.is_empty() {
+                                                    div {
+                                                        class: "mt-2",
+                                                        p {
+                                                            class: "text-xs text-gray-400 font-mono break-all",
+                                                            "Manifest: {snapshot.manifest_list}"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
