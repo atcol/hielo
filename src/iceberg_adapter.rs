@@ -8,7 +8,11 @@ use iceberg::table::Table;
 use std::collections::HashMap;
 
 /// Convert an iceberg-rust Table to our internal IcebergTable representation
-pub fn convert_iceberg_table(table: &Table, namespace: String) -> Result<IcebergTable> {
+pub fn convert_iceberg_table(
+    table: &Table,
+    namespace: String,
+    catalog_name: String,
+) -> Result<IcebergTable> {
     let metadata = table.metadata();
 
     // Convert current schema
@@ -48,6 +52,7 @@ pub fn convert_iceberg_table(table: &Table, namespace: String) -> Result<Iceberg
     Ok(IcebergTable {
         name: table.identifier().name().to_string(),
         namespace,
+        catalog_name,
         location: metadata.location().to_string(),
         schema,
         schemas,

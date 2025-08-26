@@ -64,8 +64,11 @@ fn App() -> Element {
                 .await
             {
                 Ok(iceberg_table) => {
-                    match iceberg_adapter::convert_iceberg_table(&iceberg_table, namespace.clone())
-                    {
+                    match iceberg_adapter::convert_iceberg_table(
+                        &iceberg_table,
+                        namespace.clone(),
+                        catalog_name.clone(),
+                    ) {
                         Ok(hielo_table) => {
                             // Create a unique tab ID
                             let tab_id = format!("{}.{}", namespace, table_name);
@@ -291,7 +294,9 @@ fn App() -> Element {
                                     div {
                                         class: "mb-6",
                                         nav {
-                                            class: "flex space-x-8 border-b border-gray-200",
+                                            class: "flex justify-between items-center border-b border-gray-200",
+                                            div {
+                                                class: "flex space-x-8",
                                             button {
                                                 class: format!(
                                                     "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
@@ -341,6 +346,55 @@ fn App() -> Element {
                                                 ),
                                                 onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
                                                 "📈 Snapshot History"
+                                            }
+                                            }
+
+                                            // Refresh button
+                                            button {
+                                                class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
+                                                onclick: {
+                                                    let table_name = table.name.clone();
+                                                    let namespace = table.namespace.clone();
+                                                    let catalog_name = table.catalog_name.clone();
+                                                    move |_| {
+                                                        load_table((catalog_name.clone(), namespace.clone(), table_name.clone()));
+                                                    }
+                                                },
+                                                disabled: loading_table(),
+                                                if loading_table() {
+                                                    svg {
+                                                        class: "animate-spin -ml-1 mr-2 h-4 w-4",
+                                                        fill: "none",
+                                                        view_box: "0 0 24 24",
+                                                        circle {
+                                                            class: "opacity-25",
+                                                            cx: "12",
+                                                            cy: "12",
+                                                            r: "10",
+                                                            stroke: "currentColor",
+                                                            stroke_width: "4"
+                                                        }
+                                                        path {
+                                                            class: "opacity-75",
+                                                            fill: "currentColor",
+                                                            d: "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                                        }
+                                                    }
+                                                } else {
+                                                    svg {
+                                                        class: "h-4 w-4 mr-2",
+                                                        fill: "none",
+                                                        stroke: "currentColor",
+                                                        view_box: "0 0 24 24",
+                                                        path {
+                                                            stroke_linecap: "round",
+                                                            stroke_linejoin: "round",
+                                                            stroke_width: "2",
+                                                            d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                                        }
+                                                    }
+                                                }
+                                                "Refresh"
                                             }
                                         }
                                     }
