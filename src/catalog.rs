@@ -190,7 +190,9 @@ impl CatalogManager {
         props.insert("warehouse".to_string(), warehouse.clone());
 
         // Region is required for Glue catalog - ensure it's always present
-        let region = config.config.get("region")
+        let region = config
+            .config
+            .get("region")
             .cloned()
             .unwrap_or_else(|| "us-east-1".to_string());
         props.insert("region".to_string(), region);
