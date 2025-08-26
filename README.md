@@ -43,7 +43,7 @@ xcode-select --install
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/hielo.git
+git clone https://github.com/atcol/hielo.git
 cd hielo
 
 # Build in release mode
