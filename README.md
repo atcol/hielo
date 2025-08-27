@@ -5,6 +5,44 @@ Built with Rust and Dioxus for performance and cross-platform compatibility.
 
 *Hielo* (Spanish for "ice") is a lightweight, fast tool for exploring your Iceberg tables.
 
+## Features
+
+- **🔗 Multiple Catalog Support**: Connect to REST and AWS Glue catalogs
+- **📋 Schema Visualization**: Explore table schemas with nested field support
+- **🔄 Schema Evolution**: Compare schema changes across versions
+- **🧩 Partition Management**: View partition specifications and transform functions
+- **📈 Snapshot Timeline**: Track table history with detailed operation information
+- **🚀 Cross-Platform**: Native binaries for Linux, macOS, and Windows
+
+## Screenshots
+
+### Table Overview
+Get a comprehensive view of your table metadata, including location, snapshot information, and table properties.
+
+![Table Overview](screenshots/table-overview.png)
+*Clean overview of table metadata with key information at a glance*
+
+### Schema Visualization
+Explore your table schema with detailed field information, types, and documentation. View schema evolution over time with side-by-side comparisons.
+
+![Schema Tab](screenshots/schema-tab.png)
+*Detailed schema visualization with field types, requirements, and descriptions*
+
+![Schema Evolution](screenshots/schema-evolution.png)
+*Schema evolution comparison showing field changes across versions*
+
+### Partition Management
+Visualize table partitioning strategies with detailed partition field information and transform functions.
+
+![Partitions Tab](screenshots/partitions-tab.png)
+*Partition specification details with transform functions and source field mapping*
+
+### Snapshot Timeline
+Track your table's history with a detailed timeline of all snapshots, including operation types, record counts, and file changes.
+
+![Snapshot Timeline](screenshots/snapshot-timeline.png)
+*Comprehensive snapshot timeline with operation details and statistics*
+
 ## Installation
 
 ### Pre-built Binaries
