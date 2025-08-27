@@ -35,7 +35,7 @@ pub enum TableType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TableReference {
     pub namespace: String,
     pub name: String,

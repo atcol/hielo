@@ -16,6 +16,12 @@ pub enum CatalogFormType {
     Glue,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum NavigationView {
+    Namespaces,
+    Tables { namespace: String },
+}
+
 #[component]
 pub fn CatalogConnectionScreen(
     catalog_manager: Signal<CatalogManager>,
@@ -867,15 +873,15 @@ pub fn CatalogBrowser(
     catalog_manager: Signal<CatalogManager>,
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
-    let selected_namespace = use_signal(|| Option::<String>::None);
+    let mut current_view = use_signal(|| NavigationView::Namespaces);
     let mut namespaces = use_signal(Vec::<String>::new);
-    let tables = use_signal(Vec::<TableReference>::new);
-    let mut loading_namespaces = use_signal(|| true); // Start with loading state
+    let mut tables = use_signal(Vec::<TableReference>::new);
+    let mut loading = use_signal(|| true);
 
     // Load namespaces when component mounts or catalog changes
     use_effect(move || {
         spawn(async move {
-            loading_namespaces.set(true);
+            loading.set(true);
             if let Some(connection) = catalog_manager.read().get_connections().first() {
                 match catalog_manager
                     .read()
@@ -884,58 +890,393 @@ pub fn CatalogBrowser(
                 {
                     Ok(ns) => {
                         namespaces.set(ns);
-                        loading_namespaces.set(false);
+                        loading.set(false);
                     }
                     Err(e) => {
                         log::error!("Failed to load namespaces: {}", e);
-                        loading_namespaces.set(false);
+                        loading.set(false);
                     }
                 }
             } else {
-                loading_namespaces.set(false);
+                loading.set(false);
             }
         });
     });
 
+    // Function to navigate to a namespace
+    let navigate_to_namespace = move |namespace: String| {
+        current_view.set(NavigationView::Tables { namespace: namespace.clone() });
+        spawn(async move {
+            loading.set(true);
+            if let Some(connection) = catalog_manager.read().get_connections().first() {
+                match catalog_manager
+                    .read()
+                    .list_tables(&connection.config.name, &namespace)
+                    .await
+                {
+                    Ok(table_list) => {
+                        tables.set(table_list);
+                        loading.set(false);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load tables for namespace {}: {}", namespace, e);
+                        loading.set(false);
+                    }
+                }
+            } else {
+                loading.set(false);
+            }
+        });
+    };
+
+    // Function to navigate back to namespaces
+    let navigate_back = move |_| {
+        current_view.set(NavigationView::Namespaces);
+        tables.set(Vec::new());
+    };
+
     rsx! {
         div {
-            class: "space-y-6",
-
+            class: "space-y-4",
+            
+            // File Explorer Header
             div {
                 class: "bg-white shadow rounded-lg",
                 div {
-                    class: "px-4 py-5 sm:p-6",
-                    h3 {
-                        class: "text-lg leading-6 font-medium text-gray-900 mb-4",
-                        "Browse Catalog"
+                    class: "px-4 py-3 border-b border-gray-200",
+                    FileBrowserHeader {
+                        current_view: current_view(),
+                        catalog_manager: catalog_manager,
+                        on_navigate_back: navigate_back
                     }
-                    p {
-                        class: "text-sm text-gray-500 mb-6",
-                        "Select a namespace to explore tables in your Iceberg catalog."
-                    }
-
-                    if loading_namespaces() {
-                        div {
-                            class: "flex items-center justify-center py-12",
-                            div {
-                                class: "text-center",
-                                div {
-                                    class: "animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"
+                }
+                div {
+                    class: "px-4 py-4",
+                    if loading() {
+                        LoadingView {}
+                    } else {
+                        match current_view() {
+                            NavigationView::Namespaces => rsx! {
+                                NamespaceExplorerView {
+                                    namespaces: namespaces(),
+                                    on_namespace_selected: navigate_to_namespace
                                 }
-                                p {
-                                    class: "text-sm text-gray-600",
-                                    "Loading namespaces..."
+                            },
+                            NavigationView::Tables { namespace } => rsx! {
+                                TableExplorerView {
+                                    namespace: namespace,
+                                    tables: tables(),
+                                    catalog_manager: catalog_manager,
+                                    on_table_selected: on_table_selected
                                 }
                             }
                         }
-                    } else {
-                        TableBrowser {
-                            catalog_manager: catalog_manager,
-                            namespaces: namespaces(),
-                            selected_namespace: selected_namespace,
-                            tables: tables,
-                            on_table_selected: on_table_selected,
-                            loading_namespaces: loading_namespaces()
+                    }
+                }
+            }
+        }
+    }
+}
+#[component]
+fn FileBrowserHeader(
+    current_view: NavigationView,
+    catalog_manager: Signal<CatalogManager>,
+    on_navigate_back: EventHandler<()>,
+) -> Element {
+    let catalog_name = if let Some(connection) = catalog_manager.read().get_connections().first() {
+        connection.config.name.clone()
+    } else {
+        "Unknown Catalog".to_string()
+    };
+
+    rsx! {
+        div {
+            class: "flex items-center space-x-3",
+            
+            // Back button (only show when viewing tables)
+            if let NavigationView::Tables { .. } = current_view {
+                button {
+                    onclick: move |_| on_navigate_back.call(()),
+                    class: "flex items-center text-gray-600 hover:text-gray-900 transition-colors",
+                    svg {
+                        class: "h-5 w-5 mr-1",
+                        fill: "none",
+                        stroke: "currentColor",
+                        view_box: "0 0 24 24",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            d: "M15 19l-7-7 7-7"
+                        }
+                    }
+                    "Back"
+                }
+            }
+
+            // Breadcrumb navigation
+            nav {
+                class: "flex items-center space-x-2 text-sm",
+                div {
+                    class: "flex items-center space-x-2 text-gray-600",
+                    span {
+                        class: "font-medium",
+                        "🗂️ {catalog_name}"
+                    }
+                    
+                    match current_view {
+                        NavigationView::Namespaces => rsx! {
+                            span { class: "text-gray-400", " > " }
+                            span { class: "text-gray-900 font-medium", "Namespaces" }
+                        },
+                        NavigationView::Tables { namespace } => rsx! {
+                            span { class: "text-gray-400", " > " }
+                            button {
+                                onclick: move |_| on_navigate_back.call(()),
+                                class: "text-blue-600 hover:text-blue-800 underline",
+                                "Namespaces"
+                            }
+                            span { class: "text-gray-400", " > " }
+                            span { class: "text-gray-900 font-medium", "📁 {namespace}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn LoadingView() -> Element {
+    rsx! {
+        div {
+            class: "flex items-center justify-center py-12",
+            div {
+                class: "text-center",
+                div {
+                    class: "animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"
+                }
+                p {
+                    class: "text-sm text-gray-600",
+                    "Loading..."
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NamespaceExplorerView(
+    namespaces: Vec<String>,
+    on_namespace_selected: EventHandler<String>,
+) -> Element {
+    rsx! {
+        div {
+            class: "space-y-3",
+            
+            div {
+                class: "flex items-center mb-4",
+                h3 {
+                    class: "text-lg font-medium text-gray-900",
+                    "Namespaces"
+                }
+                span {
+                    class: "ml-2 text-sm text-gray-500",
+                    "({namespaces.len()} items)"
+                }
+            }
+
+            if namespaces.is_empty() {
+                div {
+                    class: "text-center py-12",
+                    div {
+                        class: "text-gray-400 mb-2",
+                        "📂"
+                    }
+                    p {
+                        class: "text-sm text-gray-500",
+                        "No namespaces found in this catalog"
+                    }
+                }
+            } else {
+                div {
+                    class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3",
+                    for namespace in namespaces {
+                        div {
+                            class: "group relative",
+                            button {
+                                onclick: {
+                                    let ns = namespace.clone();
+                                    move |_| on_namespace_selected.call(ns.clone())
+                                },
+                                class: "w-full p-4 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                div {
+                                    class: "flex flex-col items-center space-y-2",
+                                    div {
+                                        class: "text-3xl text-blue-500 group-hover:text-blue-600",
+                                        "📁"
+                                    }
+                                    div {
+                                        class: "text-center",
+                                        p {
+                                            class: "text-sm font-medium text-gray-900 truncate",
+                                            title: "{namespace}",
+                                            "{namespace}"
+                                        }
+                                        p {
+                                            class: "text-xs text-gray-500 mt-1",
+                                            "Namespace"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TableExplorerView(
+    namespace: String,
+    tables: Vec<TableReference>,
+    catalog_manager: Signal<CatalogManager>,
+    on_table_selected: EventHandler<(String, String, String)>,
+) -> Element {
+    let iceberg_tables: Vec<_> = tables.iter().filter(|t| t.table_type == TableType::Iceberg).collect();
+    let other_tables: Vec<_> = tables.iter().filter(|t| t.table_type != TableType::Iceberg).collect();
+
+    rsx! {
+        div {
+            class: "space-y-4",
+            
+            div {
+                class: "flex items-center mb-4",
+                h3 {
+                    class: "text-lg font-medium text-gray-900",
+                    "Tables in {namespace}"
+                }
+                span {
+                    class: "ml-2 text-sm text-gray-500",
+                    "({tables.len()} items)"
+                }
+            }
+
+            if tables.is_empty() {
+                div {
+                    class: "text-center py-12",
+                    div {
+                        class: "text-gray-400 mb-2",
+                        "📄"
+                    }
+                    p {
+                        class: "text-sm text-gray-500",
+                        "No tables found in this namespace"
+                    }
+                }
+            } else {
+                div {
+                    class: "space-y-6",
+                    
+                    // Iceberg Tables Section
+                    if !iceberg_tables.is_empty() {
+                        div {
+                            h4 {
+                                class: "text-md font-medium text-gray-900 mb-3 flex items-center",
+                                "🧊 Iceberg Tables"
+                                span {
+                                    class: "ml-2 text-sm text-gray-500 font-normal",
+                                    "({iceberg_tables.len()})"
+                                }
+                            }
+                            div {
+                                class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3",
+                                for table in iceberg_tables {
+                                    div {
+                                        class: "group relative",
+                                        button {
+                                            onclick: {
+                                                let table_clone = table.clone();
+                                                move |_| {
+                                                    if let Some(connection) = catalog_manager.read().get_connections().first() {
+                                                        on_table_selected.call((
+                                                            connection.config.name.clone(),
+                                                            table_clone.namespace.clone(),
+                                                            table_clone.name.clone()
+                                                        ));
+                                                    }
+                                                }
+                                            },
+                                            class: "w-full p-4 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                                            div {
+                                                class: "flex flex-col items-center space-y-2",
+                                                div {
+                                                    class: "text-3xl text-blue-500 group-hover:text-blue-600",
+                                                    "🧊"
+                                                }
+                                                div {
+                                                    class: "text-center",
+                                                    p {
+                                                        class: "text-sm font-medium text-gray-900 truncate",
+                                                        title: "{table.name}",
+                                                        "{table.name}"
+                                                    }
+                                                    p {
+                                                        class: "text-xs text-gray-500 mt-1",
+                                                        "Iceberg Table"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Other Tables Section
+                    if !other_tables.is_empty() {
+                        div {
+                            h4 {
+                                class: "text-md font-medium text-gray-500 mb-3 flex items-center",
+                                "📄 Other Tables"
+                                span {
+                                    class: "ml-2 text-sm text-gray-400 font-normal",
+                                    "({other_tables.len()})"
+                                }
+                            }
+                            div {
+                                class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3",
+                                for table in other_tables {
+                                    div {
+                                        class: "group relative opacity-60",
+                                        div {
+                                            class: "w-full p-4 text-left border border-gray-200 rounded-lg bg-gray-50 cursor-not-allowed",
+                                            div {
+                                                class: "flex flex-col items-center space-y-2",
+                                                div {
+                                                    class: "text-3xl text-gray-400",
+                                                    "📄"
+                                                }
+                                                div {
+                                                    class: "text-center",
+                                                    p {
+                                                        class: "text-sm font-medium text-gray-500 truncate",
+                                                        title: "{table.name}",
+                                                        "{table.name}"
+                                                    }
+                                                    p {
+                                                        class: "text-xs text-gray-400 mt-1",
+                                                        "Not accessible"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
