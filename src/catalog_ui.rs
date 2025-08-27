@@ -877,6 +877,7 @@ pub fn CatalogBrowser(
     let mut namespaces = use_signal(Vec::<String>::new);
     let mut tables = use_signal(Vec::<TableReference>::new);
     let mut loading = use_signal(|| true);
+    let mut search_query = use_signal(|| String::new());
 
     // Load namespaces when component mounts or catalog changes
     use_effect(move || {
@@ -906,6 +907,7 @@ pub fn CatalogBrowser(
     // Function to navigate to a namespace
     let navigate_to_namespace = move |namespace: String| {
         current_view.set(NavigationView::Tables { namespace: namespace.clone() });
+        search_query.set(String::new()); // Clear search when navigating
         spawn(async move {
             loading.set(true);
             if let Some(connection) = catalog_manager.read().get_connections().first() {
@@ -932,6 +934,7 @@ pub fn CatalogBrowser(
     // Function to navigate back to namespaces
     let navigate_back = move |_| {
         current_view.set(NavigationView::Namespaces);
+        search_query.set(String::new()); // Clear search when navigating back
         tables.set(Vec::new());
     };
 
@@ -959,6 +962,8 @@ pub fn CatalogBrowser(
                             NavigationView::Namespaces => rsx! {
                                 NamespaceExplorerView {
                                     namespaces: namespaces(),
+                                    search_query: search_query(),
+                                    on_search_change: move |query: String| search_query.set(query),
                                     on_namespace_selected: navigate_to_namespace
                                 }
                             },
@@ -966,6 +971,8 @@ pub fn CatalogBrowser(
                                 TableExplorerView {
                                     namespace: namespace,
                                     tables: tables(),
+                                    search_query: search_query(),
+                                    on_search_change: move |query: String| search_query.set(query),
                                     catalog_manager: catalog_manager,
                                     on_table_selected: on_table_selected
                                 }
@@ -1068,25 +1075,73 @@ fn LoadingView() -> Element {
 #[component]
 fn NamespaceExplorerView(
     namespaces: Vec<String>,
+    search_query: String,
+    on_search_change: EventHandler<String>,
     on_namespace_selected: EventHandler<String>,
 ) -> Element {
+    // Filter namespaces based on search query
+    let all_namespaces = namespaces.clone();
+    let query_clone = search_query.clone();
+    let filtered_namespaces: Vec<String> = if query_clone.is_empty() {
+        namespaces
+    } else {
+        let query_lower = query_clone.to_lowercase();
+        namespaces.into_iter()
+            .filter(|namespace| namespace.to_lowercase().contains(&query_lower))
+            .collect()
+    };
+
     rsx! {
         div {
             class: "space-y-3",
             
             div {
-                class: "flex items-center mb-4",
+                class: "flex items-center justify-between mb-4",
                 h3 {
                     class: "text-lg font-medium text-gray-900",
                     "Namespaces"
+                    if !query_clone.is_empty() {
+                        span {
+                            class: "ml-2 text-sm text-gray-500 font-normal",
+                            "filtered by \"{query_clone}\""
+                        }
+                    }
                 }
                 span {
-                    class: "ml-2 text-sm text-gray-500",
-                    "({namespaces.len()} items)"
+                    class: "text-sm text-gray-500",
+                    if !query_clone.is_empty() && filtered_namespaces.len() != all_namespaces.len() {
+                        "{filtered_namespaces.len()} of {all_namespaces.len()} items"
+                    } else {
+                        "({filtered_namespaces.len()} items)"
+                    }
                 }
             }
 
-            if namespaces.is_empty() {
+            // Search Input
+            SearchInput {
+                search_query: query_clone.clone(),
+                on_search_change: on_search_change,
+                placeholder: "Search namespaces...".to_string()
+            }
+
+            if filtered_namespaces.is_empty() && !query_clone.is_empty() {
+                div {
+                    class: "text-center py-12",
+                    div {
+                        class: "text-gray-400 mb-2",
+                        "🔍"
+                    }
+                    p {
+                        class: "text-sm text-gray-500",
+                        "No namespaces found matching \"{query_clone}\""
+                    }
+                    button {
+                        onclick: move |_| on_search_change.call(String::new()),
+                        class: "mt-2 text-sm text-blue-600 hover:text-blue-800 underline",
+                        "Clear search"
+                    }
+                }
+            } else if filtered_namespaces.is_empty() {
                 div {
                     class: "text-center py-12",
                     div {
@@ -1101,7 +1156,7 @@ fn NamespaceExplorerView(
             } else {
                 div {
                     class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3",
-                    for namespace in namespaces {
+                    for namespace in filtered_namespaces {
                         div {
                             class: "group relative",
                             button {
@@ -1142,29 +1197,77 @@ fn NamespaceExplorerView(
 fn TableExplorerView(
     namespace: String,
     tables: Vec<TableReference>,
+    search_query: String,
+    on_search_change: EventHandler<String>,
     catalog_manager: Signal<CatalogManager>,
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
-    let iceberg_tables: Vec<_> = tables.iter().filter(|t| t.table_type == TableType::Iceberg).collect();
-    let other_tables: Vec<_> = tables.iter().filter(|t| t.table_type != TableType::Iceberg).collect();
+    // Filter tables based on search query
+    let all_tables = &tables;
+    let query_clone = search_query.clone();
+    let filtered_tables: Vec<&TableReference> = if query_clone.is_empty() {
+        tables.iter().collect()
+    } else {
+        let query_lower = query_clone.to_lowercase();
+        tables.iter()
+            .filter(|table| table.name.to_lowercase().contains(&query_lower))
+            .collect()
+    };
+
+    let iceberg_tables: Vec<_> = filtered_tables.iter().filter(|t| t.table_type == TableType::Iceberg).copied().collect();
+    let other_tables: Vec<_> = filtered_tables.iter().filter(|t| t.table_type != TableType::Iceberg).copied().collect();
 
     rsx! {
         div {
             class: "space-y-4",
             
             div {
-                class: "flex items-center mb-4",
+                class: "flex items-center justify-between mb-4",
                 h3 {
                     class: "text-lg font-medium text-gray-900",
                     "Tables in {namespace}"
+                    if !query_clone.is_empty() {
+                        span {
+                            class: "ml-2 text-sm text-gray-500 font-normal",
+                            "filtered by \"{query_clone}\""
+                        }
+                    }
                 }
                 span {
-                    class: "ml-2 text-sm text-gray-500",
-                    "({tables.len()} items)"
+                    class: "text-sm text-gray-500",
+                    if !query_clone.is_empty() && filtered_tables.len() != all_tables.len() {
+                        "{filtered_tables.len()} of {all_tables.len()} items"
+                    } else {
+                        "({filtered_tables.len()} items)"
+                    }
                 }
             }
 
-            if tables.is_empty() {
+            // Search Input
+            SearchInput {
+                search_query: query_clone.clone(),
+                on_search_change: on_search_change,
+                placeholder: "Search tables...".to_string()
+            }
+
+            if filtered_tables.is_empty() && !query_clone.is_empty() {
+                div {
+                    class: "text-center py-12",
+                    div {
+                        class: "text-gray-400 mb-2",
+                        "🔍"
+                    }
+                    p {
+                        class: "text-sm text-gray-500",
+                        "No tables found matching \"{query_clone}\""
+                    }
+                    button {
+                        onclick: move |_| on_search_change.call(String::new()),
+                        class: "mt-2 text-sm text-blue-600 hover:text-blue-800 underline",
+                        "Clear search"
+                    }
+                }
+            } else if filtered_tables.is_empty() {
                 div {
                     class: "text-center py-12",
                     div {
@@ -1277,6 +1380,58 @@ fn TableExplorerView(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+#[component]
+fn SearchInput(
+    search_query: String,
+    on_search_change: EventHandler<String>,
+    placeholder: String,
+) -> Element {
+    rsx! {
+        div {
+            class: "relative mb-4",
+            div {
+                class: "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none",
+                svg {
+                    class: "h-5 w-5 text-gray-400",
+                    fill: "none",
+                    stroke: "currentColor",
+                    view_box: "0 0 24 24",
+                    path {
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        stroke_width: "2",
+                        d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    }
+                }
+            }
+            input {
+                r#type: "text",
+                value: "{search_query}",
+                oninput: move |evt| on_search_change.call(evt.value()),
+                class: "block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm",
+                placeholder: "{placeholder}"
+            }
+            if !search_query.is_empty() {
+                button {
+                    onclick: move |_| on_search_change.call(String::new()),
+                    class: "absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600",
+                    svg {
+                        class: "h-5 w-5",
+                        fill: "none",
+                        stroke: "currentColor",
+                        view_box: "0 0 24 24",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            d: "M6 18L18 6M6 6l12 12"
                         }
                     }
                 }
