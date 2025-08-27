@@ -1,4 +1,4 @@
-use crate::catalog::{CatalogConfig, CatalogManager, CatalogType, TableReference};
+use crate::catalog::{CatalogConfig, CatalogManager, CatalogType, TableReference, TableType};
 use dioxus::prelude::*;
 use std::collections::HashMap;
 
@@ -142,6 +142,7 @@ pub fn CatalogConnectionScreen(
                         selected_namespace: selected_namespace,
                         tables: tables,
                         on_table_selected,
+                        loading_namespaces: false, // Connection screen doesn't show namespace loading
                     }
                 }
             }
@@ -546,6 +547,7 @@ fn TableBrowser(
     selected_namespace: Signal<Option<String>>,
     tables: Signal<Vec<TableReference>>,
     on_table_selected: EventHandler<(String, String, String)>,
+    loading_namespaces: bool,
 ) -> Element {
     let mut loading_tables = use_signal(|| false);
     let load_tables = move |namespace: String| async move {
@@ -602,29 +604,50 @@ fn TableBrowser(
                         class: "block text-sm font-medium text-gray-700 mb-2",
                         "Select Namespace"
                     }
-                    div {
-                        class: "grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3",
-                        for namespace in namespaces.clone() {
-                            button {
-                                onclick: {
-                                    let ns = namespace.clone();
-                                    move |_| {
-                                        log::info!("Namespace button clicked: {}", ns);
-                                        spawn(load_tables(ns.clone()));
-                                    }
-                                },
-                                disabled: loading_tables(),
-                                class: format!(
-                                    "text-left px-4 py-2 border rounded-md transition-colors {}",
-                                    if loading_tables() {
-                                        "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed"
-                                    } else if selected_namespace().as_ref() == Some(&namespace.clone()) {
-                                        "border-blue-500 bg-blue-50 text-blue-700"
-                                    } else {
-                                        "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
-                                    }
-                                ),
-                                "📁 {namespace}"
+                    if loading_namespaces {
+                        div {
+                            class: "flex items-center justify-center py-8",
+                            div {
+                                class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"
+                            }
+                            span {
+                                class: "text-sm text-gray-600",
+                                "Loading namespaces..."
+                            }
+                        }
+                    } else if namespaces.is_empty() {
+                        div {
+                            class: "text-center py-8",
+                            p {
+                                class: "text-sm text-gray-500 italic",
+                                "No namespaces found in this catalog"
+                            }
+                        }
+                    } else {
+                        div {
+                            class: "grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3",
+                            for namespace in namespaces.clone() {
+                                button {
+                                    onclick: {
+                                        let ns = namespace.clone();
+                                        move |_| {
+                                            log::info!("Namespace button clicked: {}", ns);
+                                            spawn(load_tables(ns.clone()));
+                                        }
+                                    },
+                                    disabled: loading_tables(),
+                                    class: format!(
+                                        "text-left px-4 py-2 border rounded-md transition-colors {}",
+                                        if loading_tables() {
+                                            "border-gray-300 bg-gray-100 text-gray-400 cursor-not-allowed"
+                                        } else if selected_namespace().as_ref() == Some(&namespace.clone()) {
+                                            "border-blue-500 bg-blue-50 text-blue-700"
+                                        } else {
+                                            "border-gray-300 hover:border-gray-400 hover:bg-gray-50"
+                                        }
+                                    ),
+                                    "📁 {namespace}"
+                                }
                             }
                         }
                     }
@@ -659,37 +682,64 @@ fn TableBrowser(
                                 for table in tables() {
                                     button {
                                         onclick: move |_| {
-                                            if let Some(connection) = catalog_manager.read().get_connections().first() {
-                                                on_table_selected.call((
-                                                    connection.config.name.clone(),
-                                                    table.namespace.clone(),
-                                                    table.name.clone()
-                                                ));
+                                            // Only allow clicking on Iceberg tables
+                                            if table.table_type == TableType::Iceberg {
+                                                if let Some(connection) = catalog_manager.read().get_connections().first() {
+                                                    on_table_selected.call((
+                                                        connection.config.name.clone(),
+                                                        table.namespace.clone(),
+                                                        table.name.clone()
+                                                    ));
+                                                }
                                             }
                                         },
-                                        class: "text-left px-4 py-3 border border-gray-300 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors",
+                                        disabled: table.table_type != TableType::Iceberg,
+                                        class: format!(
+                                            "text-left px-4 py-3 border rounded-md transition-colors {}",
+                                            match table.table_type {
+                                                TableType::Iceberg => "border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer",
+                                                TableType::Unknown => "border-gray-200 bg-gray-50 cursor-not-allowed opacity-60"
+                                            }
+                                        ),
                                         div {
                                             class: "flex items-center justify-between",
                                             div {
                                                 p {
-                                                    class: "text-sm font-medium text-gray-900",
-                                                    "🗂️ {table.name}"
+                                                    class: format!(
+                                                        "text-sm font-medium {}",
+                                                        match table.table_type {
+                                                            TableType::Iceberg => "text-gray-900",
+                                                            TableType::Unknown => "text-gray-500"
+                                                        }
+                                                    ),
+                                                    match table.table_type {
+                                                        TableType::Iceberg => format!("🧊 {}", table.name),
+                                                        TableType::Unknown => format!("📄 {}", table.name)
+                                                    }
                                                 }
                                                 p {
                                                     class: "text-xs text-gray-500",
                                                     "{table.full_name}"
                                                 }
+                                                if table.table_type != TableType::Iceberg {
+                                                    p {
+                                                        class: "text-xs text-gray-400 italic mt-1",
+                                                        "Not an Iceberg table"
+                                                    }
+                                                }
                                             }
-                                            svg {
-                                                class: "h-5 w-5 text-gray-400",
-                                                fill: "none",
-                                                stroke: "currentColor",
-                                                view_box: "0 0 24 24",
-                                                path {
-                                                    stroke_linecap: "round",
-                                                    stroke_linejoin: "round",
-                                                    stroke_width: "2",
-                                                    d: "M9 5l7 7-7 7"
+                                            if table.table_type == TableType::Iceberg {
+                                                svg {
+                                                    class: "h-5 w-5 text-gray-400",
+                                                    fill: "none",
+                                                    stroke: "currentColor",
+                                                    view_box: "0 0 24 24",
+                                                    path {
+                                                        stroke_linecap: "round",
+                                                        stroke_linejoin: "round",
+                                                        stroke_width: "2",
+                                                        d: "M9 5l7 7-7 7"
+                                                    }
                                                 }
                                             }
                                         }
@@ -820,19 +870,29 @@ pub fn CatalogBrowser(
     let selected_namespace = use_signal(|| Option::<String>::None);
     let mut namespaces = use_signal(Vec::<String>::new);
     let tables = use_signal(Vec::<TableReference>::new);
+    let mut loading_namespaces = use_signal(|| true); // Start with loading state
 
     // Load namespaces when component mounts or catalog changes
     use_effect(move || {
         spawn(async move {
+            loading_namespaces.set(true);
             if let Some(connection) = catalog_manager.read().get_connections().first() {
                 match catalog_manager
                     .read()
                     .list_namespaces(&connection.config.name)
                     .await
                 {
-                    Ok(ns) => namespaces.set(ns),
-                    Err(e) => log::error!("Failed to load namespaces: {}", e),
+                    Ok(ns) => {
+                        namespaces.set(ns);
+                        loading_namespaces.set(false);
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load namespaces: {}", e);
+                        loading_namespaces.set(false);
+                    }
                 }
+            } else {
+                loading_namespaces.set(false);
             }
         });
     });
@@ -854,12 +914,29 @@ pub fn CatalogBrowser(
                         "Select a namespace to explore tables in your Iceberg catalog."
                     }
 
-                    TableBrowser {
-                        catalog_manager: catalog_manager,
-                        namespaces: namespaces(),
-                        selected_namespace: selected_namespace,
-                        tables: tables,
-                        on_table_selected: on_table_selected
+                    if loading_namespaces() {
+                        div {
+                            class: "flex items-center justify-center py-12",
+                            div {
+                                class: "text-center",
+                                div {
+                                    class: "animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"
+                                }
+                                p {
+                                    class: "text-sm text-gray-600",
+                                    "Loading namespaces..."
+                                }
+                            }
+                        }
+                    } else {
+                        TableBrowser {
+                            catalog_manager: catalog_manager,
+                            namespaces: namespaces(),
+                            selected_namespace: selected_namespace,
+                            tables: tables,
+                            on_table_selected: on_table_selected,
+                            loading_namespaces: loading_namespaces()
+                        }
                     }
                 }
             }
