@@ -130,9 +130,9 @@ fn App() -> Element {
             class: "min-h-screen bg-gray-100",
             tabindex: "0", // Make div focusable for keyboard events
             onkeydown: move |event| {
-                // Handle CTRL+F to open global search (only when connected)
+                // Handle CTRL+K to open global search (only when connected)
                 let key_str = format!("{:?}", event.key());
-                if event.modifiers().ctrl() && key_str.contains("\"f\"") {
+                if event.modifiers().ctrl() && key_str.contains("\"k\"") {
                     if matches!(app_state(), AppState::Connected) {
                         show_global_search.set(true);
                         global_search_query.set(String::new());
@@ -612,7 +612,7 @@ fn GlobalSearchModal(
                     class: "flex items-center justify-between p-4 border-b border-gray-200",
                     h3 {
                         class: "text-lg font-medium text-gray-900",
-                        "🔍 Find Table (Ctrl+F)"
+                        "🔍 Find Table (Ctrl+K)"
                     }
                     button {
                         onclick: move |_| on_close.call(()),
@@ -740,7 +740,7 @@ fn GlobalSearchModal(
                     if !filtered_tables.is_empty() {
                         "Showing {filtered_tables.len().min(10)} of {filtered_tables.len()} tables"
                     } else {
-                        "Use Ctrl+F to open this search anytime"
+                        "Use Ctrl+K to open this search anytime"
                     }
                 }
             }
