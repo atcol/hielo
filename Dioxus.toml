@@ -16,7 +16,7 @@ style = ["./assets/main.css"]
 [web.proxy]
 
 [bundle]
-identifier = "systems.wellow.hield.app"
+identifier = "systems.wellow.hielo.app"
 publisher = "Hielo"
 icon = ["./assets/icon-32x32.png"]
 resources = ["./assets"]
