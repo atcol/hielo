@@ -52,6 +52,8 @@ fn App() -> Element {
     let catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
+    let mut show_global_search = use_signal(|| false);
+    let mut global_search_query = use_signal(|| String::new());
 
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
         spawn(async move {
@@ -126,6 +128,17 @@ fn App() -> Element {
     rsx! {
         div {
             class: "min-h-screen bg-gray-100",
+            tabindex: "0", // Make div focusable for keyboard events
+            onkeydown: move |event| {
+                // Handle CTRL+F to open global search (only when connected)
+                let key_str = format!("{:?}", event.key());
+                if event.modifiers().ctrl() && key_str.contains("\"f\"") {
+                    if matches!(app_state(), AppState::Connected) {
+                        show_global_search.set(true);
+                        global_search_query.set(String::new());
+                    }
+                }
+            },
 
             // Loading overlay
             if loading_table() {
@@ -198,6 +211,20 @@ fn App() -> Element {
                 }
             }
 
+            // Global search modal (CTRL+F)
+            if show_global_search() {
+                GlobalSearchModal {
+                    catalog_manager: catalog_manager,
+                    search_query: global_search_query(),
+                    on_search_change: move |query: String| global_search_query.set(query),
+                    on_table_selected: load_table,
+                    on_close: move |_| {
+                        show_global_search.set(false);
+                        global_search_query.set(String::new());
+                    }
+                }
+            }
+
             // Main content based on app state
             match app_state() {
                 AppState::CatalogConnection => rsx! {
@@ -215,9 +242,35 @@ fn App() -> Element {
                             class: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
                             div {
                                 class: "flex justify-between items-center py-6",
-                                h1 {
-                                    class: "text-3xl font-bold text-gray-900",
-                                    "🧊 Hielo"
+                                div {
+                                    class: "flex items-center space-x-4",
+                                    h1 {
+                                        class: "text-3xl font-bold text-gray-900",
+                                        "🧊 Hielo"
+                                    }
+                                }
+
+                                // Home button
+                                button {
+                                    onclick: move |_| {
+                                        app_state.set(AppState::CatalogConnection);
+                                        open_tabs.set(vec![AppTab::Catalog]);
+                                        active_tab_index.set(0);
+                                    },
+                                    class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
+                                    svg {
+                                        class: "h-4 w-4 mr-2",
+                                        fill: "none",
+                                        stroke: "currentColor",
+                                        view_box: "0 0 24 24",
+                                        path {
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                                        }
+                                    }
+                                    "Home"
                                 }
                             }
                         }
@@ -286,7 +339,12 @@ fn App() -> Element {
                                 AppTab::Catalog => rsx! {
                                     CatalogBrowser {
                                         catalog_manager: catalog_manager,
-                                        on_table_selected: load_table
+                                        on_table_selected: load_table,
+                                        on_home_requested: move |_| {
+                                            app_state.set(AppState::CatalogConnection);
+                                            open_tabs.set(vec![AppTab::Catalog]);
+                                            active_tab_index.set(0);
+                                        }
                                     }
                                 },
                                 AppTab::Table { table, .. } => rsx! {
@@ -460,6 +518,232 @@ fn App() -> Element {
                 display: none;
             }}
             "
+        }
+    }
+}
+
+#[component]
+fn GlobalSearchModal(
+    catalog_manager: Signal<CatalogManager>,
+    search_query: String,
+    on_search_change: EventHandler<String>,
+    on_table_selected: EventHandler<(String, String, String)>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let mut all_tables = use_signal(|| Vec::<catalog::TableReference>::new());
+    let mut loading = use_signal(|| false);
+    let mut error_message = use_signal(|| Option::<String>::None);
+
+    // Load all tables from all namespaces when modal opens
+    use_effect(move || {
+        spawn(async move {
+            loading.set(true);
+            error_message.set(None);
+
+            let connections = catalog_manager.read().get_connections().to_vec();
+            if let Some(connection) = connections.first() {
+                let catalog_name = connection.config.name.clone();
+
+                match catalog_manager.read().list_namespaces(&catalog_name).await {
+                    Ok(namespaces) => {
+                        let mut tables = Vec::new();
+
+                        for namespace in namespaces {
+                            match catalog_manager
+                                .read()
+                                .list_tables(&catalog_name, &namespace)
+                                .await
+                            {
+                                Ok(namespace_tables) => {
+                                    tables.extend(namespace_tables);
+                                }
+                                Err(e) => {
+                                    error_message.set(Some(format!(
+                                        "Failed to load tables from namespace '{}': {}",
+                                        namespace, e
+                                    )));
+                                }
+                            }
+                        }
+
+                        all_tables.set(tables);
+                    }
+                    Err(e) => {
+                        error_message.set(Some(format!("Failed to load namespaces: {}", e)));
+                    }
+                }
+            } else {
+                error_message.set(Some("No catalog connection found".to_string()));
+            }
+
+            loading.set(false);
+        });
+    });
+
+    // Filter tables based on search query
+    let query_clone = search_query.clone();
+    let filtered_tables: Vec<catalog::TableReference> = if query_clone.is_empty() {
+        all_tables()
+    } else {
+        let query_lower = query_clone.to_lowercase();
+        all_tables()
+            .into_iter()
+            .filter(|table| {
+                table.full_name.to_lowercase().contains(&query_lower)
+                    || table.name.to_lowercase().contains(&query_lower)
+                    || table.namespace.to_lowercase().contains(&query_lower)
+            })
+            .collect()
+    };
+
+    rsx! {
+        // Modal overlay
+        div {
+            class: "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-start justify-center pt-20",
+            onclick: move |_| on_close.call(()),
+
+            // Modal content
+            div {
+                class: "bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-96 flex flex-col",
+                onclick: |e| e.stop_propagation(), // Prevent closing when clicking inside modal
+
+                // Header
+                div {
+                    class: "flex items-center justify-between p-4 border-b border-gray-200",
+                    h3 {
+                        class: "text-lg font-medium text-gray-900",
+                        "🔍 Find Table (Ctrl+F)"
+                    }
+                    button {
+                        onclick: move |_| on_close.call(()),
+                        class: "text-gray-400 hover:text-gray-600",
+                        "✕"
+                    }
+                }
+
+                // Search input
+                div {
+                    class: "p-4 border-b border-gray-200",
+                    input {
+                        r#type: "text",
+                        placeholder: "Search by table name or namespace.table_name...",
+                        value: search_query,
+                        oninput: move |evt| on_search_change.call(evt.value()),
+                        onkeydown: move |event| {
+                            let key_str = format!("{:?}", event.key());
+                            if key_str.contains("Escape") {
+                                on_close.call(());
+                            }
+                        },
+                        class: "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent",
+                        autofocus: true
+                    }
+                }
+
+                // Results
+                div {
+                    class: "flex-1 overflow-y-auto",
+                    if loading() {
+                        div {
+                            class: "flex items-center justify-center py-8",
+                            div {
+                                class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
+                            }
+                        }
+                    } else if let Some(error) = error_message() {
+                        div {
+                            class: "p-4 text-red-600 text-sm",
+                            "Error: {error}"
+                        }
+                    } else if filtered_tables.is_empty() {
+                        div {
+                            class: "p-4 text-gray-500 text-sm text-center",
+                            if query_clone.is_empty() {
+                                "No tables found"
+                            } else {
+                                "No tables match your search"
+                            }
+                        }
+                    } else {
+                        div {
+                            class: "divide-y divide-gray-200",
+                            for table in filtered_tables.iter().take(10) { // Limit to first 10 results
+                                button {
+                                    onclick: {
+                                        let table_clone = table.clone();
+                                        let connections = catalog_manager.read().get_connections().to_vec();
+                                        let catalog_name = if let Some(connection) = connections.first() {
+                                            connection.config.name.clone()
+                                        } else {
+                                            "unknown".to_string()
+                                        };
+                                        move |_| {
+                                            // Only allow selection of Iceberg tables
+                                            if table_clone.table_type == catalog::TableType::Iceberg {
+                                                on_table_selected.call((catalog_name.clone(), table_clone.namespace.clone(), table_clone.name.clone()));
+                                                on_close.call(());
+                                            }
+                                        }
+                                    },
+                                    class: format!(
+                                        "w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center justify-between {}",
+                                        if table.table_type == catalog::TableType::Iceberg {
+                                            "cursor-pointer"
+                                        } else {
+                                            "cursor-not-allowed opacity-50"
+                                        }
+                                    ),
+                                    disabled: table.table_type != catalog::TableType::Iceberg,
+
+                                    div {
+                                        class: "flex items-center",
+                                        span {
+                                            class: "mr-3 text-lg",
+                                            if table.table_type == catalog::TableType::Iceberg {
+                                                "🧊"
+                                            } else {
+                                                "📄"
+                                            }
+                                        }
+                                        div {
+                                            div {
+                                                class: "font-medium text-gray-900 text-sm",
+                                                "{table.full_name}"
+                                            }
+                                            div {
+                                                class: "text-gray-500 text-xs",
+                                                "{table.namespace} • {table.name}"
+                                            }
+                                        }
+                                    }
+
+                                    if table.table_type == catalog::TableType::Iceberg {
+                                        span {
+                                            class: "text-gray-400 text-xs",
+                                            "Press Enter"
+                                        }
+                                    } else {
+                                        span {
+                                            class: "text-gray-400 text-xs",
+                                            "Not Iceberg"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Footer
+                div {
+                    class: "p-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500",
+                    if !filtered_tables.is_empty() {
+                        "Showing {filtered_tables.len().min(10)} of {filtered_tables.len()} tables"
+                    } else {
+                        "Use Ctrl+F to open this search anytime"
+                    }
+                }
+            }
         }
     }
 }

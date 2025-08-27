@@ -872,6 +872,7 @@ fn SavedCatalogsSection(
 pub fn CatalogBrowser(
     catalog_manager: Signal<CatalogManager>,
     on_table_selected: EventHandler<(String, String, String)>,
+    on_home_requested: EventHandler<()>,
 ) -> Element {
     let mut current_view = use_signal(|| NavigationView::Namespaces);
     let mut namespaces = use_signal(Vec::<String>::new);
@@ -906,7 +907,9 @@ pub fn CatalogBrowser(
 
     // Function to navigate to a namespace
     let navigate_to_namespace = move |namespace: String| {
-        current_view.set(NavigationView::Tables { namespace: namespace.clone() });
+        current_view.set(NavigationView::Tables {
+            namespace: namespace.clone(),
+        });
         search_query.set(String::new()); // Clear search when navigating
         spawn(async move {
             loading.set(true);
@@ -941,7 +944,7 @@ pub fn CatalogBrowser(
     rsx! {
         div {
             class: "space-y-4",
-            
+
             // File Explorer Header
             div {
                 class: "bg-white shadow rounded-lg",
@@ -950,7 +953,8 @@ pub fn CatalogBrowser(
                     FileBrowserHeader {
                         current_view: current_view(),
                         catalog_manager: catalog_manager,
-                        on_navigate_back: navigate_back
+                        on_navigate_back: navigate_back,
+                        on_home_requested: on_home_requested
                     }
                 }
                 div {
@@ -989,6 +993,7 @@ fn FileBrowserHeader(
     current_view: NavigationView,
     catalog_manager: Signal<CatalogManager>,
     on_navigate_back: EventHandler<()>,
+    on_home_requested: EventHandler<()>,
 ) -> Element {
     let catalog_name = if let Some(connection) = catalog_manager.read().get_connections().first() {
         connection.config.name.clone()
@@ -998,15 +1003,74 @@ fn FileBrowserHeader(
 
     rsx! {
         div {
-            class: "flex items-center space-x-3",
-            
-            // Back button (only show when viewing tables)
-            if let NavigationView::Tables { .. } = current_view {
+            class: "flex items-center justify-between w-full",
+
+            // Left side - navigation buttons
+            div {
+                class: "flex items-center space-x-3",
+
+                // Back button (only show when viewing tables)
+                if let NavigationView::Tables { .. } = current_view {
+                    button {
+                        onclick: move |_| on_navigate_back.call(()),
+                        class: "flex items-center text-gray-600 hover:text-gray-900 transition-colors",
+                        svg {
+                            class: "h-5 w-5 mr-1",
+                            fill: "none",
+                            stroke: "currentColor",
+                            view_box: "0 0 24 24",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "2",
+                                d: "M15 19l-7-7 7-7"
+                            }
+                        }
+                        "Back"
+                    }
+                }
+            }
+
+            // Center - breadcrumb navigation
+            div {
+                class: "flex-1",
+                nav {
+                    class: "flex items-center justify-center space-x-2 text-sm",
+                    div {
+                        class: "flex items-center space-x-2 text-gray-600",
+                        span {
+                            class: "font-medium",
+                            "🗂️ {catalog_name}"
+                        }
+
+                        match current_view {
+                            NavigationView::Namespaces => rsx! {
+                                span { class: "text-gray-400", " > " }
+                                span { class: "text-gray-900 font-medium", "Namespaces" }
+                            },
+                            NavigationView::Tables { namespace } => rsx! {
+                                span { class: "text-gray-400", " > " }
+                                button {
+                                    onclick: move |_| on_navigate_back.call(()),
+                                    class: "text-blue-600 hover:text-blue-800 underline",
+                                    "Namespaces"
+                                }
+                                span { class: "text-gray-400", " > " }
+                                span { class: "text-gray-900 font-medium", "📁 {namespace}" }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Right side - home button
+            div {
+                class: "flex items-center",
                 button {
-                    onclick: move |_| on_navigate_back.call(()),
-                    class: "flex items-center text-gray-600 hover:text-gray-900 transition-colors",
+                    onclick: move |_| on_home_requested.call(()),
+                    class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
                     svg {
-                        class: "h-5 w-5 mr-1",
+                        class: "h-4 w-4 mr-2",
                         fill: "none",
                         stroke: "currentColor",
                         view_box: "0 0 24 24",
@@ -1014,39 +1078,10 @@ fn FileBrowserHeader(
                             stroke_linecap: "round",
                             stroke_linejoin: "round",
                             stroke_width: "2",
-                            d: "M15 19l-7-7 7-7"
+                            d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
                         }
                     }
-                    "Back"
-                }
-            }
-
-            // Breadcrumb navigation
-            nav {
-                class: "flex items-center space-x-2 text-sm",
-                div {
-                    class: "flex items-center space-x-2 text-gray-600",
-                    span {
-                        class: "font-medium",
-                        "🗂️ {catalog_name}"
-                    }
-                    
-                    match current_view {
-                        NavigationView::Namespaces => rsx! {
-                            span { class: "text-gray-400", " > " }
-                            span { class: "text-gray-900 font-medium", "Namespaces" }
-                        },
-                        NavigationView::Tables { namespace } => rsx! {
-                            span { class: "text-gray-400", " > " }
-                            button {
-                                onclick: move |_| on_navigate_back.call(()),
-                                class: "text-blue-600 hover:text-blue-800 underline",
-                                "Namespaces"
-                            }
-                            span { class: "text-gray-400", " > " }
-                            span { class: "text-gray-900 font-medium", "📁 {namespace}" }
-                        }
-                    }
+                    "Home"
                 }
             }
         }
@@ -1086,7 +1121,8 @@ fn NamespaceExplorerView(
         namespaces
     } else {
         let query_lower = query_clone.to_lowercase();
-        namespaces.into_iter()
+        namespaces
+            .into_iter()
             .filter(|namespace| namespace.to_lowercase().contains(&query_lower))
             .collect()
     };
@@ -1094,7 +1130,7 @@ fn NamespaceExplorerView(
     rsx! {
         div {
             class: "space-y-3",
-            
+
             div {
                 class: "flex items-center justify-between mb-4",
                 h3 {
@@ -1209,18 +1245,27 @@ fn TableExplorerView(
         tables.iter().collect()
     } else {
         let query_lower = query_clone.to_lowercase();
-        tables.iter()
+        tables
+            .iter()
             .filter(|table| table.name.to_lowercase().contains(&query_lower))
             .collect()
     };
 
-    let iceberg_tables: Vec<_> = filtered_tables.iter().filter(|t| t.table_type == TableType::Iceberg).copied().collect();
-    let other_tables: Vec<_> = filtered_tables.iter().filter(|t| t.table_type != TableType::Iceberg).copied().collect();
+    let iceberg_tables: Vec<_> = filtered_tables
+        .iter()
+        .filter(|t| t.table_type == TableType::Iceberg)
+        .copied()
+        .collect();
+    let other_tables: Vec<_> = filtered_tables
+        .iter()
+        .filter(|t| t.table_type != TableType::Iceberg)
+        .copied()
+        .collect();
 
     rsx! {
         div {
             class: "space-y-4",
-            
+
             div {
                 class: "flex items-center justify-between mb-4",
                 h3 {
@@ -1282,7 +1327,7 @@ fn TableExplorerView(
             } else {
                 div {
                     class: "space-y-6",
-                    
+
                     // Iceberg Tables Section
                     if !iceberg_tables.is_empty() {
                         div {
@@ -1338,7 +1383,7 @@ fn TableExplorerView(
                             }
                         }
                     }
-                    
+
                     // Other Tables Section
                     if !other_tables.is_empty() {
                         div {

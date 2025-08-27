@@ -338,31 +338,39 @@ impl CatalogManager {
         );
 
         let mut table_refs: Vec<TableReference> = Vec::new();
-        
+
         for ident in table_idents {
             let table_name = ident.name().to_string();
             let full_name = format!("{}.{}", namespace, table_name);
-            
+
             // Try to load the table to determine if it's an Iceberg table
             let table_type = match connection.catalog.load_table(&ident).await {
                 Ok(_) => {
                     log::info!("✅ Iceberg table detected: {}", full_name);
                     TableType::Iceberg
-                },
+                }
                 Err(e) => {
-                    log::info!("❓ Non-Iceberg or inaccessible table: {} ({})", full_name, e);
+                    log::info!(
+                        "❓ Non-Iceberg or inaccessible table: {} ({})",
+                        full_name,
+                        e
+                    );
                     TableType::Unknown
                 }
             };
-            
+
             let table_ref = TableReference {
                 namespace: namespace.to_string(),
                 name: table_name,
                 full_name: full_name.clone(),
                 table_type,
             };
-            
-            log::info!("Table: {} [Type: {:?}]", table_ref.full_name, table_ref.table_type);
+
+            log::info!(
+                "Table: {} [Type: {:?}]",
+                table_ref.full_name,
+                table_ref.table_type
+            );
             table_refs.push(table_ref);
         }
 
