@@ -439,6 +439,24 @@ impl CatalogManager {
             .retain(|conn| conn.config.name != catalog_name);
         self.connections.len() < initial_len
     }
+
+    /// Delete a catalog - removes both the connection and the saved configuration
+    pub fn delete_catalog(&mut self, catalog_name: &str) -> Result<(), CatalogError> {
+        // Remove from active connections
+        self.remove_connection(catalog_name);
+
+        // Remove from saved configuration
+        if let Err(e) = self.config.remove_catalog(catalog_name) {
+            log::error!("Failed to remove catalog from config: {}", e);
+            return Err(CatalogError::InvalidConfig(format!(
+                "Failed to remove catalog from config: {}",
+                e
+            )));
+        }
+
+        log::info!("Successfully deleted catalog: {}", catalog_name);
+        Ok(())
+    }
 }
 
 // Test connection function
