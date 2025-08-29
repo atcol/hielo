@@ -44,7 +44,7 @@ fn main() {
 }
 
 fn App() -> Element {
-    let mut app_state = use_signal(|| AppState::CatalogConnection);
+    let mut app_state = use_signal(|| AppState::Connected);
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
     let table_view_tab = use_signal(|| TableViewTab::Overview);
@@ -252,7 +252,8 @@ fn App() -> Element {
                                 delete_catalog_name.set(catalog_name);
                                 show_delete_confirmation.set(true);
                             },
-                            on_table_selected: load_table
+                            on_table_selected: load_table,
+                            on_add_catalog: move |_| app_state.set(AppState::CatalogConnection)
                         }
                         
                         // Main Content Area
@@ -273,27 +274,6 @@ fn App() -> Element {
                                                 "🧊 Hielo"
                                             }
                                         }
-                                        
-                                        // Home button
-                                        button {
-                                            onclick: move |_| {
-                                                app_state.set(AppState::CatalogConnection);
-                                            },
-                                            class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
-                                            svg {
-                                                class: "h-4 w-4 mr-2",
-                                                fill: "none",
-                                                stroke: "currentColor",
-                                                view_box: "0 0 24 24",
-                                                path {
-                                                    stroke_linecap: "round",
-                                                    stroke_linejoin: "round",
-                                                    stroke_width: "2",
-                                                    d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
-                                                }
-                                            }
-                                            "Home"
-                                        }
                                     }
                                 }
                             }
@@ -309,13 +289,14 @@ fn App() -> Element {
                                     }
                                     p {
                                         class: "text-gray-600 mb-6",
-                                        "Use the left navigation pane to browse your catalogs, namespaces, and tables."
+                                        "Get started by adding a catalog connection, then browse your tables using the left navigation pane."
                                     }
                                     div {
                                         class: "text-sm text-gray-500 space-y-2",
-                                        p { "💡 Tip: Press Ctrl+K to search for tables globally" }
-                                        p { "🌳 Click on catalog names to expand namespaces" }
-                                        p { "🧊 Click on Iceberg tables to open them" }
+                                        p { "➕ Click 'Add' in the left panel to connect to a catalog" }
+                                        p { "💡 Press Ctrl+K to search for tables globally" }
+                                        p { "🌳 Click catalog names to expand namespaces" }
+                                        p { "🧊 Click Iceberg tables to open them" }
                                     }
                                 }
                             }
@@ -623,6 +604,7 @@ fn LeftNavigationPane(
     on_toggle_collapse: EventHandler<()>,
     on_catalog_delete_requested: EventHandler<String>,
     on_table_selected: EventHandler<(String, String, String)>,
+    on_add_catalog: EventHandler<()>,
 ) -> Element {
     let mut namespace_tables =
         use_signal(std::collections::HashMap::<String, Vec<catalog::TableReference>>::new);
@@ -701,13 +683,24 @@ fn LeftNavigationPane(
                 if collapsed { "w-12" } else { "w-80" }
             ),
 
-            // Header
+            // Header with Toolbar
             div {
                 class: "p-4 border-b border-gray-200 flex items-center justify-between",
                 if !collapsed {
-                    h2 {
-                        class: "text-lg font-semibold text-gray-900",
-                        "📚 Catalogs"
+                    div {
+                        class: "flex items-center gap-2 flex-1",
+                        h2 {
+                            class: "text-lg font-semibold text-gray-900",
+                            "📚 Catalogs"
+                        }
+                        // Add Catalog Button
+                        button {
+                            onclick: move |_| on_add_catalog.call(()),
+                            class: "ml-auto px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1",
+                            title: "Add New Catalog",
+                            span { "+" }
+                            span { "Add" }
+                        }
                     }
                 }
                 button {
