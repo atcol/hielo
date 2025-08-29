@@ -675,7 +675,7 @@ fn LeftNavigationPane(
         }
     };
 
-    let connections = catalog_manager.read().get_connections().to_vec();
+    let saved_catalogs = catalog_manager.read().get_saved_catalogs().to_vec();
 
     rsx! {
         div {
@@ -725,20 +725,21 @@ fn LeftNavigationPane(
                 // Catalog list
                 div {
                     class: "flex-1 overflow-y-auto p-2",
-                    if connections.is_empty() {
+                    if saved_catalogs.is_empty() {
                         div {
                             class: "text-center py-8 text-gray-500",
-                            div { "🔌" }
-                            div { class: "text-sm mt-2", "No catalogs connected" }
+                            div { "📚" }
+                            div { class: "text-sm mt-2", "No catalogs configured" }
+                            div { class: "text-xs mt-1", "Click 'Add' to get started" }
                         }
                     } else {
                         div {
                             class: "space-y-1",
-                            for connection in connections.iter() {
+                            for catalog_config in saved_catalogs.iter() {
                                 CatalogTreeNode {
-                                    catalog_name: connection.config.name.clone(),
-                                    catalog_type: connection.config.catalog_type.clone(),
-                                    expanded: expanded_catalogs.read().contains(&connection.config.name),
+                                    catalog_name: catalog_config.name.clone(),
+                                    catalog_type: catalog_config.catalog_type.clone(),
+                                    expanded: expanded_catalogs.read().contains(&catalog_config.name),
                                     expanded_namespaces: expanded_namespaces,
                                     namespace_tables: namespace_tables,
                                     loading_namespaces: loading_namespaces,
@@ -782,22 +783,69 @@ fn CatalogTreeNode(
                 let catalog_name_clone = catalog_name_for_effect.clone();
                 spawn(async move {
                     loading_catalog.set(true);
-                    match catalog_manager
-                        .read()
-                        .list_namespaces(&catalog_name_clone)
-                        .await
-                    {
-                        Ok(ns_list) => {
-                            namespaces.set(ns_list);
+                    
+                    // First, ensure the catalog is connected
+                    let catalog_config = {
+                        let manager = catalog_manager.read();
+                        manager.get_saved_catalogs()
+                            .iter()
+                            .find(|c| c.name == catalog_name_clone)
+                            .cloned()
+                    };
+                    
+                    if let Some(config) = catalog_config {
+                        // Try to connect the catalog if not already connected
+                        let is_connected = catalog_manager.read()
+                            .get_connections()
+                            .iter()
+                            .any(|conn| conn.config.name == catalog_name_clone);
+                        
+                        if !is_connected {
+                            let connect_result = {
+                                let mut manager_guard = catalog_manager.write();
+                                manager_guard.connect_catalog(config).await
+                            };
+                            
+                            match connect_result {
+                                Ok(_) => {
+                                    log::info!("Successfully connected to catalog: {}", catalog_name_clone);
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to connect catalog {}: {}",
+                                        catalog_name_clone,
+                                        e
+                                    );
+                                    loading_catalog.set(false);
+                                    return;
+                                }
+                            }
                         }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to load namespaces for catalog {}: {}",
-                                catalog_name_clone,
-                                e
-                            );
+                        
+                        // Now try to list namespaces
+                        match catalog_manager
+                            .read()
+                            .list_namespaces(&catalog_name_clone)
+                            .await
+                        {
+                            Ok(ns_list) => {
+                                namespaces.set(ns_list);
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to load namespaces for catalog {}: {}",
+                                    catalog_name_clone,
+                                    e
+                                );
+                            }
                         }
+                    } else {
+                        log::error!(
+                            "Catalog configuration not found for: {}",
+                            catalog_name_clone
+                        );
                     }
+                    
                     loading_catalog.set(false);
                 });
             }
