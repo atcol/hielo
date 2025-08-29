@@ -629,13 +629,13 @@ fn LeftNavigationPane(
     let mut loading_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
     let mut toggle_catalog_expansion = move |catalog_name: String| {
-        let mut expanded = expanded_catalogs.read().clone();
-        if expanded.contains(&catalog_name) {
-            expanded.remove(&catalog_name);
-        } else {
-            expanded.insert(catalog_name);
-        }
-        expanded_catalogs.set(expanded);
+        expanded_catalogs.with_mut(|expanded| {
+            if expanded.contains(&catalog_name) {
+                expanded.remove(&catalog_name);
+            } else {
+                expanded.insert(catalog_name);
+            }
+        });
     };
 
     let mut toggle_namespace_expansion = move |namespace_key: String| {
@@ -644,11 +644,17 @@ fn LeftNavigationPane(
             let catalog_name = namespace_parts[0];
             let namespace_name = namespace_parts[1];
 
-            let mut expanded = expanded_namespaces.read().clone();
-            if expanded.contains(&namespace_key) {
-                expanded.remove(&namespace_key);
-            } else {
-                expanded.insert(namespace_key.clone());
+            let should_expand = !expanded_namespaces.read().contains(&namespace_key);
+            
+            expanded_namespaces.with_mut(|expanded| {
+                if expanded.contains(&namespace_key) {
+                    expanded.remove(&namespace_key);
+                } else {
+                    expanded.insert(namespace_key.clone());
+                }
+            });
+            
+            if should_expand {
 
                 // Load tables for this namespace
                 let catalog_name = catalog_name.to_string();
@@ -684,7 +690,6 @@ fn LeftNavigationPane(
                     });
                 });
             }
-            expanded_namespaces.set(expanded);
         }
     };
 
