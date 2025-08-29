@@ -44,7 +44,15 @@ fn main() {
 }
 
 fn App() -> Element {
-    let mut app_state = use_signal(|| AppState::Connected);
+    let mut app_state = use_signal(|| {
+        // Start in Connected state if there are saved catalogs, otherwise CatalogConnection
+        let catalog_manager = CatalogManager::new();
+        if catalog_manager.get_saved_catalogs().is_empty() {
+            AppState::CatalogConnection
+        } else {
+            AppState::Connected
+        }
+    });
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
     let table_view_tab = use_signal(|| TableViewTab::Overview);
@@ -779,76 +787,76 @@ fn CatalogTreeNode(
     {
         let catalog_name_for_effect = catalog_name.clone();
         use_effect(move || {
-            if expanded && namespaces.read().is_empty() {
+            if expanded && namespaces.read().is_empty() && !loading_catalog() {
                 let catalog_name_clone = catalog_name_for_effect.clone();
                 spawn(async move {
-                    loading_catalog.set(true);
+                loading_catalog.set(true);
+                
+                // First, ensure the catalog is connected
+                let catalog_config = {
+                    let manager = catalog_manager.read();
+                    manager.get_saved_catalogs()
+                        .iter()
+                        .find(|c| c.name == catalog_name_clone)
+                        .cloned()
+                };
+                
+                if let Some(config) = catalog_config {
+                    // Try to connect the catalog if not already connected
+                    let is_connected = catalog_manager.read()
+                        .get_connections()
+                        .iter()
+                        .any(|conn| conn.config.name == catalog_name_clone);
                     
-                    // First, ensure the catalog is connected
-                    let catalog_config = {
-                        let manager = catalog_manager.read();
-                        manager.get_saved_catalogs()
-                            .iter()
-                            .find(|c| c.name == catalog_name_clone)
-                            .cloned()
-                    };
-                    
-                    if let Some(config) = catalog_config {
-                        // Try to connect the catalog if not already connected
-                        let is_connected = catalog_manager.read()
-                            .get_connections()
-                            .iter()
-                            .any(|conn| conn.config.name == catalog_name_clone);
+                    if !is_connected {
+                        let connect_result = {
+                            let mut manager_guard = catalog_manager.write();
+                            manager_guard.connect_catalog(config).await
+                        };
                         
-                        if !is_connected {
-                            let connect_result = {
-                                let mut manager_guard = catalog_manager.write();
-                                manager_guard.connect_catalog(config).await
-                            };
-                            
-                            match connect_result {
-                                Ok(_) => {
-                                    log::info!("Successfully connected to catalog: {}", catalog_name_clone);
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "Failed to connect catalog {}: {}",
-                                        catalog_name_clone,
-                                        e
-                                    );
-                                    loading_catalog.set(false);
-                                    return;
-                                }
-                            }
-                        }
-                        
-                        // Now try to list namespaces
-                        match catalog_manager
-                            .read()
-                            .list_namespaces(&catalog_name_clone)
-                            .await
-                        {
-                            Ok(ns_list) => {
-                                namespaces.set(ns_list);
+                        match connect_result {
+                            Ok(_) => {
+                                log::info!("Successfully connected to catalog: {}", catalog_name_clone);
                             }
                             Err(e) => {
                                 log::error!(
-                                    "Failed to load namespaces for catalog {}: {}",
+                                    "Failed to connect catalog {}: {}",
                                     catalog_name_clone,
                                     e
                                 );
+                                loading_catalog.set(false);
+                                return;
                             }
                         }
-                    } else {
-                        log::error!(
-                            "Catalog configuration not found for: {}",
-                            catalog_name_clone
-                        );
                     }
                     
-                    loading_catalog.set(false);
-                });
-            }
+                    // Now try to list namespaces
+                    match catalog_manager
+                        .read()
+                        .list_namespaces(&catalog_name_clone)
+                        .await
+                    {
+                        Ok(ns_list) => {
+                            namespaces.set(ns_list);
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to load namespaces for catalog {}: {}",
+                                catalog_name_clone,
+                                e
+                            );
+                        }
+                    }
+                } else {
+                    log::error!(
+                        "Catalog configuration not found for: {}",
+                        catalog_name_clone
+                    );
+                }
+                
+                loading_catalog.set(false);
+            });
+        }
         });
     }
 
