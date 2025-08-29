@@ -48,14 +48,14 @@ fn App() -> Element {
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
     let table_view_tab = use_signal(|| TableViewTab::Overview);
-    let catalog_manager = use_signal(CatalogManager::new);
+    let mut catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
     let mut show_global_search = use_signal(|| false);
     let mut global_search_query = use_signal(String::new);
-    let nav_pane_collapsed = use_signal(|| false);
-    let show_delete_confirmation = use_signal(|| false);
-    let delete_catalog_name = use_signal(String::new);
+    let mut nav_pane_collapsed = use_signal(|| false);
+    let mut show_delete_confirmation = use_signal(|| false);
+    let mut delete_catalog_name = use_signal(String::new);
     let expanded_catalogs = use_signal(std::collections::HashSet::<String>::new);
     let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
@@ -237,8 +237,110 @@ fn App() -> Element {
                     }
                 },
                 AppState::Connected => rsx! {
+                    // Layout with sidebar and main content
                     div {
-                        "Navigation pane temporarily disabled for testing"
+                        class: "flex h-screen bg-gray-100",
+                        
+                        // Left Navigation Pane
+                        LeftNavigationPane {
+                            collapsed: nav_pane_collapsed(),
+                            catalog_manager: catalog_manager,
+                            expanded_catalogs: expanded_catalogs,
+                            expanded_namespaces: expanded_namespaces,
+                            on_toggle_collapse: move |_| nav_pane_collapsed.set(!nav_pane_collapsed()),
+                            on_catalog_delete_requested: move |catalog_name: String| {
+                                delete_catalog_name.set(catalog_name);
+                                show_delete_confirmation.set(true);
+                            },
+                            on_table_selected: load_table
+                        }
+                        
+                        // Main Content Area
+                        div {
+                            class: "flex-1 flex flex-col bg-white",
+                            
+                            // Header
+                            header {
+                                class: "bg-white shadow-sm border-b flex-shrink-0",
+                                div {
+                                    class: "px-4 sm:px-6 lg:px-8",
+                                    div {
+                                        class: "flex justify-between items-center py-6",
+                                        div {
+                                            class: "flex items-center space-x-4",
+                                            h1 {
+                                                class: "text-3xl font-bold text-gray-900",
+                                                "🧊 Hielo"
+                                            }
+                                        }
+                                        
+                                        // Home button
+                                        button {
+                                            onclick: move |_| {
+                                                app_state.set(AppState::CatalogConnection);
+                                            },
+                                            class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
+                                            svg {
+                                                class: "h-4 w-4 mr-2",
+                                                fill: "none",
+                                                stroke: "currentColor",
+                                                view_box: "0 0 24 24",
+                                                path {
+                                                    stroke_linecap: "round",
+                                                    stroke_linejoin: "round",
+                                                    stroke_width: "2",
+                                                    d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                                                }
+                                            }
+                                            "Home"
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            // Main content
+                            main {
+                                class: "flex-1 p-6 overflow-y-auto",
+                                div {
+                                    class: "text-center py-12",
+                                    h2 {
+                                        class: "text-2xl font-semibold text-gray-900 mb-4",
+                                        "Welcome to Hielo! 🧊"
+                                    }
+                                    p {
+                                        class: "text-gray-600 mb-6",
+                                        "Use the left navigation pane to browse your catalogs, namespaces, and tables."
+                                    }
+                                    div {
+                                        class: "text-sm text-gray-500 space-y-2",
+                                        p { "💡 Tip: Press Ctrl+K to search for tables globally" }
+                                        p { "🌳 Click on catalog names to expand namespaces" }
+                                        p { "🧊 Click on Iceberg tables to open them" }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Delete confirmation dialog
+                        if show_delete_confirmation() {
+                            DeleteConfirmationDialog {
+                                catalog_name: delete_catalog_name(),
+                                on_confirm: move |_| {
+                                    let catalog_name_to_delete = delete_catalog_name();
+                                    if let Err(e) = catalog_manager.with_mut(|manager| {
+                                        manager.delete_catalog(&catalog_name_to_delete)
+                                    }) {
+                                        error_message.set(Some(format!("Failed to delete catalog: {}", e)));
+                                    }
+                                    show_delete_confirmation.set(false);
+                                    delete_catalog_name.set(String::new());
+                                },
+                                on_cancel: move |_| {
+                                    show_delete_confirmation.set(false);
+                                    delete_catalog_name.set(String::new());
+                                }
+                            }
+                        }
                     }
                 },
             }
