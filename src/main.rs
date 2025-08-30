@@ -619,10 +619,13 @@ fn LeftNavigationPane(
     let mut loading_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
     let mut toggle_catalog_expansion = move |catalog_name: String| {
+        log::info!("Toggling catalog expansion for: {}", catalog_name);
         expanded_catalogs.with_mut(|expanded| {
             if expanded.contains(&catalog_name) {
+                log::info!("Collapsing catalog: {}", catalog_name);
                 expanded.remove(&catalog_name);
             } else {
+                log::info!("Expanding catalog: {}", catalog_name);
                 expanded.insert(catalog_name);
             }
         });
@@ -783,80 +786,23 @@ fn CatalogTreeNode(
     let mut namespaces = use_signal(Vec::<String>::new);
     let mut loading_catalog = use_signal(|| false);
 
-    // Load namespaces when catalog is expanded
+    // Load namespaces when catalog is expanded  
     {
         let catalog_name_for_effect = catalog_name.clone();
         use_effect(move || {
-            if expanded && namespaces.read().is_empty() && !loading_catalog() {
+            log::info!("Effect running for catalog: {}, expanded: {}", catalog_name_for_effect, expanded);
+            if expanded {
+                log::info!("Catalog is expanded, loading namespaces for: {}", catalog_name_for_effect);
                 let catalog_name_clone = catalog_name_for_effect.clone();
                 spawn(async move {
-                loading_catalog.set(true);
-                
-                // First, ensure the catalog is connected
-                let catalog_config = {
-                    let manager = catalog_manager.read();
-                    manager.get_saved_catalogs()
-                        .iter()
-                        .find(|c| c.name == catalog_name_clone)
-                        .cloned()
-                };
-                
-                if let Some(config) = catalog_config {
-                    // Try to connect the catalog if not already connected
-                    let is_connected = catalog_manager.read()
-                        .get_connections()
-                        .iter()
-                        .any(|conn| conn.config.name == catalog_name_clone);
+                    loading_catalog.set(true);
                     
-                    if !is_connected {
-                        let connect_result = {
-                            let mut manager_guard = catalog_manager.write();
-                            manager_guard.connect_catalog(config).await
-                        };
-                        
-                        match connect_result {
-                            Ok(_) => {
-                                log::info!("Successfully connected to catalog: {}", catalog_name_clone);
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to connect catalog {}: {}",
-                                    catalog_name_clone,
-                                    e
-                                );
-                                loading_catalog.set(false);
-                                return;
-                            }
-                        }
-                    }
+                    // Simple test - just load some dummy data
+                    namespaces.set(vec!["namespace1".to_string(), "namespace2".to_string()]);
                     
-                    // Now try to list namespaces
-                    match catalog_manager
-                        .read()
-                        .list_namespaces(&catalog_name_clone)
-                        .await
-                    {
-                        Ok(ns_list) => {
-                            namespaces.set(ns_list);
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to load namespaces for catalog {}: {}",
-                                catalog_name_clone,
-                                e
-                            );
-                        }
-                    }
-                } else {
-                    log::error!(
-                        "Catalog configuration not found for: {}",
-                        catalog_name_clone
-                    );
-                }
-                
-                loading_catalog.set(false);
-            });
-        }
+                    loading_catalog.set(false);
+                });
+            }
         });
     }
 
@@ -878,7 +824,10 @@ fn CatalogTreeNode(
                     class: "flex items-center flex-1 cursor-pointer",
                     onclick: {
                         let catalog_name_toggle = catalog_name.clone();
-                        move |_| on_toggle_catalog.call(catalog_name_toggle.clone())
+                        move |_| {
+                            log::info!("Catalog clicked: {}", catalog_name_toggle);
+                            on_toggle_catalog.call(catalog_name_toggle.clone())
+                        }
                     },
 
                     // Expand/collapse icon
