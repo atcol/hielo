@@ -34,7 +34,7 @@ enum TableViewTab {
 }
 
 fn main() {
-    dioxus_logger::init(log::LevelFilter::Info).expect("failed to init logger");
+    dioxus_logger::init(tracing::Level::INFO).expect("failed to init logger");
 
     LaunchBuilder::desktop()
         .with_cfg(dioxus::desktop::Config::new().with_window(
@@ -915,7 +915,7 @@ fn CatalogTreeNode(
                 button {
                     onclick: {
                         let catalog_name_delete = catalog_name.clone();
-                        move |e| {
+                        move |e: dioxus::prelude::Event<dioxus::html::MouseData>| {
                             e.stop_propagation();
                             on_delete_catalog.call(catalog_name_delete.clone());
                         }

@@ -4,13 +4,13 @@ version = "0.3.0"
 edition = "2024"
 
 [dependencies]
-dioxus = { version = "0.5", features = ["desktop"] }
-dioxus-logger = "0.4"
+dioxus = { version = "0.6", features = ["desktop"] }
+dioxus-logger = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.0", features = ["v4", "serde"] }
-tokio = { version = "1.0", features = ["full"] }
+uuid = { version = "1.18", features = ["v4", "serde"] }
+tokio = { version = "1.47", features = ["full"] }
 anyhow = "1.0"
 tracing = "0.1.41"
 log = "0.4.27"
@@ -25,6 +25,16 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"
 
 [dev-dependencies]
 tempfile = "3.21.0"
