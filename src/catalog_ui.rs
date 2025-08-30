@@ -878,7 +878,7 @@ pub fn CatalogBrowser(
     let mut namespaces = use_signal(Vec::<String>::new);
     let mut tables = use_signal(Vec::<TableReference>::new);
     let mut loading = use_signal(|| true);
-    let mut search_query = use_signal(|| String::new());
+    let mut search_query = use_signal(String::new);
 
     // Load namespaces when component mounts or catalog changes
     use_effect(move || {
