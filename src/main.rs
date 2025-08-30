@@ -790,15 +790,76 @@ fn CatalogTreeNode(
     {
         let catalog_name_for_effect = catalog_name.clone();
         use_effect(move || {
-            log::info!("Effect running for catalog: {}, expanded: {}", catalog_name_for_effect, expanded);
-            if expanded {
-                log::info!("Catalog is expanded, loading namespaces for: {}", catalog_name_for_effect);
+            if expanded && namespaces.read().is_empty() && !loading_catalog() {
+                log::info!("Loading namespaces for catalog: {}", catalog_name_for_effect);
                 let catalog_name_clone = catalog_name_for_effect.clone();
                 spawn(async move {
                     loading_catalog.set(true);
                     
-                    // Simple test - just load some dummy data
-                    namespaces.set(vec!["namespace1".to_string(), "namespace2".to_string()]);
+                    // First, ensure the catalog is connected
+                    let catalog_config = {
+                        let manager = catalog_manager.read();
+                        manager.get_saved_catalogs()
+                            .iter()
+                            .find(|c| c.name == catalog_name_clone)
+                            .cloned()
+                    };
+                    
+                    if let Some(config) = catalog_config {
+                        // Try to connect the catalog if not already connected
+                        let is_connected = catalog_manager.read()
+                            .get_connections()
+                            .iter()
+                            .any(|conn| conn.config.name == catalog_name_clone);
+                        
+                        if !is_connected {
+                            log::info!("Catalog not connected, connecting: {}", catalog_name_clone);
+                            let connect_result = {
+                                let mut manager_guard = catalog_manager.write();
+                                manager_guard.connect_catalog(config).await
+                            };
+                            
+                            match connect_result {
+                                Ok(_) => {
+                                    log::info!("Successfully connected to catalog: {}", catalog_name_clone);
+                                }
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to connect catalog {}: {}",
+                                        catalog_name_clone,
+                                        e
+                                    );
+                                    loading_catalog.set(false);
+                                    return;
+                                }
+                            }
+                        }
+                        
+                        // Now try to list namespaces
+                        log::info!("Loading namespaces for connected catalog: {}", catalog_name_clone);
+                        match catalog_manager
+                            .read()
+                            .list_namespaces(&catalog_name_clone)
+                            .await
+                        {
+                            Ok(ns_list) => {
+                                log::info!("Loaded {} namespaces for catalog {}", ns_list.len(), catalog_name_clone);
+                                namespaces.set(ns_list);
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to load namespaces for catalog {}: {}",
+                                    catalog_name_clone,
+                                    e
+                                );
+                            }
+                        }
+                    } else {
+                        log::error!(
+                            "Catalog configuration not found for: {}",
+                            catalog_name_clone
+                        );
+                    }
                     
                     loading_catalog.set(false);
                 });
