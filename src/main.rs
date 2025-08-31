@@ -10,8 +10,7 @@ mod data;
 mod iceberg_adapter;
 
 use catalog::CatalogManager;
-use catalog_ui::{CatalogBrowser, CatalogConnectionScreen};
-use components::{SnapshotTimelineTab, TableOverviewTab, TablePartitionsTab, TableSchemaTab};
+use catalog_ui::CatalogConnectionScreen;
 use data::IcebergTable;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +34,7 @@ enum TableViewTab {
 }
 
 fn main() {
-    dioxus_logger::init(log::LevelFilter::Info).expect("failed to init logger");
+    dioxus_logger::init(tracing::Level::INFO).expect("failed to init logger");
 
     LaunchBuilder::desktop()
         .with_cfg(dioxus::desktop::Config::new().with_window(
@@ -45,17 +44,31 @@ fn main() {
 }
 
 fn App() -> Element {
-    let mut app_state = use_signal(|| AppState::CatalogConnection);
+    let mut app_state = use_signal(|| {
+        // Start in Connected state if there are saved catalogs, otherwise CatalogConnection
+        let catalog_manager = CatalogManager::new();
+        if catalog_manager.get_saved_catalogs().is_empty() {
+            AppState::CatalogConnection
+        } else {
+            AppState::Connected
+        }
+    });
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
     let mut table_view_tab = use_signal(|| TableViewTab::Overview);
-    let catalog_manager = use_signal(CatalogManager::new);
+    let mut catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
     let mut show_global_search = use_signal(|| false);
-    let mut global_search_query = use_signal(|| String::new());
+    let mut global_search_query = use_signal(String::new);
+    let mut nav_pane_collapsed = use_signal(|| false);
+    let mut show_delete_confirmation = use_signal(|| false);
+    let mut delete_catalog_name = use_signal(String::new);
+    let expanded_catalogs = use_signal(std::collections::HashSet::<String>::new);
+    let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
+        log::info!("Loading table: {} from namespace: {} in catalog: {}", table_name, namespace, catalog_name);
         spawn(async move {
             loading_table.set(true);
             error_message.set(None);
@@ -66,12 +79,14 @@ fn App() -> Element {
                 .await
             {
                 Ok(iceberg_table) => {
+                    log::info!("Successfully loaded iceberg table, converting...");
                     match iceberg_adapter::convert_iceberg_table(
                         &iceberg_table,
                         namespace.clone(),
                         catalog_name.clone(),
                     ) {
                         Ok(hielo_table) => {
+                            log::info!("Table converted successfully, creating tab...");
                             // Create a unique tab ID
                             let tab_id = format!("{}.{}", namespace, table_name);
                             let new_tab = AppTab::Table {
@@ -94,25 +109,30 @@ fn App() -> Element {
 
                             if let Some(index) = existing_index {
                                 // Switch to existing tab
+                                log::info!("Switching to existing tab at index: {}", index);
                                 active_tab_index.set(index);
                             } else {
                                 // Add new tab and switch to it
                                 let mut tabs = open_tabs.read().clone();
                                 tabs.push(new_tab);
                                 let new_index = tabs.len() - 1;
+                                log::info!("Adding new tab and switching to index: {}", new_index);
                                 open_tabs.set(tabs);
                                 active_tab_index.set(new_index);
                             }
 
                             // Ensure we're in connected state
+                            log::info!("Setting app state to Connected");
                             app_state.set(AppState::Connected);
                         }
                         Err(e) => {
+                            log::error!("Failed to convert table: {}", e);
                             error_message.set(Some(format!("Failed to convert table: {}", e)));
                         }
                     }
                 }
                 Err(e) => {
+                    log::error!("Failed to load table: {}", e);
                     error_message.set(Some(format!("Failed to load table: {}", e)));
                 }
             }
@@ -132,11 +152,9 @@ fn App() -> Element {
             onkeydown: move |event| {
                 // Handle CTRL+K to open global search (only when connected)
                 let key_str = format!("{:?}", event.key());
-                if event.modifiers().ctrl() && key_str.contains("\"k\"") {
-                    if matches!(app_state(), AppState::Connected) {
-                        show_global_search.set(true);
-                        global_search_query.set(String::new());
-                    }
+                if event.modifiers().ctrl() && key_str.contains("\"k\"") && matches!(app_state(), AppState::Connected) {
+                    show_global_search.set(true);
+                    global_search_query.set(String::new());
                 }
             },
 
@@ -235,248 +253,213 @@ fn App() -> Element {
                     }
                 },
                 AppState::Connected => rsx! {
-                    // Header
-                    header {
-                        class: "bg-white shadow-sm border-b",
+                    // Layout with sidebar and main content
+                    div {
+                        class: "flex h-screen bg-gray-100",
+                        
+                        // Left Navigation Pane
+                        LeftNavigationPane {
+                            collapsed: nav_pane_collapsed(),
+                            catalog_manager: catalog_manager,
+                            expanded_catalogs: expanded_catalogs,
+                            expanded_namespaces: expanded_namespaces,
+                            on_toggle_collapse: move |_| nav_pane_collapsed.set(!nav_pane_collapsed()),
+                            on_catalog_delete_requested: move |catalog_name: String| {
+                                delete_catalog_name.set(catalog_name);
+                                show_delete_confirmation.set(true);
+                            },
+                            on_table_selected: load_table,
+                            on_add_catalog: move |_| app_state.set(AppState::CatalogConnection)
+                        }
+                        
+                        // Main Content Area
                         div {
-                            class: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
-                            div {
-                                class: "flex justify-between items-center py-6",
+                            class: "flex-1 flex flex-col bg-white",
+                            
+                            // Header
+                            header {
+                                class: "bg-white shadow-sm border-b flex-shrink-0",
                                 div {
-                                    class: "flex items-center space-x-4",
-                                    h1 {
-                                        class: "text-3xl font-bold text-gray-900",
-                                        "🧊 Hielo"
-                                    }
-                                }
-
-                                // Home button
-                                button {
-                                    onclick: move |_| {
-                                        app_state.set(AppState::CatalogConnection);
-                                        open_tabs.set(vec![AppTab::Catalog]);
-                                        active_tab_index.set(0);
-                                    },
-                                    class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
-                                    svg {
-                                        class: "h-4 w-4 mr-2",
-                                        fill: "none",
-                                        stroke: "currentColor",
-                                        view_box: "0 0 24 24",
-                                        path {
-                                            stroke_linecap: "round",
-                                            stroke_linejoin: "round",
-                                            stroke_width: "2",
-                                            d: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                                    class: "px-4 sm:px-6 lg:px-8",
+                                    div {
+                                        class: "flex justify-between items-center py-6",
+                                        div {
+                                            class: "flex items-center space-x-4",
+                                            h1 {
+                                                class: "text-3xl font-bold text-gray-900",
+                                                "🧊 Hielo"
+                                            }
                                         }
                                     }
-                                    "Home"
                                 }
                             }
-                        }
-                    }
-
-                    // Tab Navigation
-                    div {
-                        class: "bg-white border-b",
-                        div {
-                            class: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
-                            nav {
-                                class: "flex space-x-0 overflow-x-auto",
-                                for (index, tab) in open_tabs().iter().enumerate() {
+                            
+                            // Main content
+                            main {
+                                class: "flex-1 flex flex-col overflow-hidden",
+                                
+                                // Tab bar
+                                if open_tabs.read().len() > 1 {
                                     div {
-                                        class: "flex items-center",
-                                        button {
-                                            onclick: move |_| {
-                                                if index < open_tabs.read().len() {
-                                                    active_tab_index.set(index);
+                                        class: "flex border-b border-gray-200 bg-gray-50",
+                                        for (index, tab) in open_tabs.read().iter().enumerate() {
+                                            button {
+                                                onclick: move |_| active_tab_index.set(index),
+                                                class: format!("px-4 py-2 text-sm font-medium border-r border-gray-200 {}",
+                                                    if index == active_tab_index() {
+                                                        "bg-white text-blue-600 border-b-2 border-blue-600"
+                                                    } else {
+                                                        "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                                    }
+                                                ),
+                                                {
+                                                    match tab {
+                                                        AppTab::Catalog => "📁 Catalogs".to_string(),
+                                                        AppTab::Table { table, .. } => format!("📊 {}", table.name),
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Tab content
+                                div {
+                                    class: "flex-1 overflow-y-auto",
+                                    if let Some(current_tab) = open_tabs.read().get(active_tab_index()) {
+                                        match current_tab {
+                                            AppTab::Catalog => rsx! {
+                                                div {
+                                                    class: "p-6",
+                                                    div {
+                                                        class: "text-center py-12",
+                                                        h2 {
+                                                            class: "text-2xl font-semibold text-gray-900 mb-4",
+                                                            "Welcome to Hielo! 🧊"
+                                                        }
+                                                        p {
+                                                            class: "text-gray-600 mb-6",
+                                                            "Get started by adding a catalog connection, then browse your tables using the left navigation pane."
+                                                        }
+                                                        div {
+                                                            class: "text-sm text-gray-500 space-y-2",
+                                                            p { "➕ Click 'Add' in the left panel to connect to a catalog" }
+                                                            p { "💡 Press Ctrl+K to search for tables globally" }
+                                                            p { "🌳 Click catalog names to expand namespaces" }
+                                                            p { "🧊 Click Iceberg tables to open them" }
+                                                        }
+                                                    }
                                                 }
                                             },
-                                            class: format!(
-                                                "py-4 px-4 border-b-2 font-medium text-sm transition-colors whitespace-nowrap flex items-center {}",
-                                                if active_tab_index() == index {
-                                                    "border-blue-500 text-blue-600 bg-blue-50"
-                                                } else {
-                                                    "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                }
-                                            ),
-                                            match tab {
-                                                AppTab::Catalog => "🔍 Catalog".to_string(),
-                                                AppTab::Table { table, .. } => format!("📊 {}.{}", table.namespace, table.name),
-                                            }
-                                        }
-                                        if index > 0 {
-                                            button {
-                                                onclick: move |_| {
-                                                    let mut tabs = open_tabs.read().clone();
-                                                    if tabs.len() > 1 && index > 0 { // Don't close catalog tab
-                                                        tabs.remove(index);
-                                                        open_tabs.set(tabs.clone());
-
-                                                        // Adjust active tab index if necessary
-                                                        let current_active = *active_tab_index.read();
-                                                        if current_active >= index {
-                                                            let new_active = if current_active > 0 { current_active - 1 } else { 0 };
-                                                            active_tab_index.set(new_active);
+                                            AppTab::Table { table, .. } => rsx! {
+                                                div {
+                                                    class: "h-full flex flex-col",
+                                                    
+                                                    // Table sub-tabs
+                                                    div {
+                                                        class: "flex border-b border-gray-200 bg-gray-50 px-6",
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::Overview),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::Overview) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Overview"
+                                                        }
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::Schema),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::Schema) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Schema"
+                                                        }
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::Partitions),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::Partitions) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Partitions"
+                                                        }
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::SnapshotHistory) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Snapshots"
                                                         }
                                                     }
-                                                },
-                                                class: "ml-2 p-1 rounded-full hover:bg-gray-200 text-gray-400 hover:text-gray-600",
-                                                "×"
-                                            }
+                                                    
+                                                    // Table sub-tab content
+                                                    div {
+                                                        class: "flex-1 overflow-y-auto p-6",
+                                                        match table_view_tab() {
+                                                            TableViewTab::Overview => rsx! {
+                                                                components::TableOverviewTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                            TableViewTab::Schema => rsx! {
+                                                                components::TableSchemaTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                            TableViewTab::Partitions => rsx! {
+                                                                components::TablePartitionsTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                            TableViewTab::SnapshotHistory => rsx! {
+                                                                components::SnapshotTimelineTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                        }
+                                                    }
+                                                }
+                                            },
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-
-                    // Tab Content
-                    main {
-                        class: "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8",
-                        if let Some(current_tab) = open_tabs().get(active_tab_index()) {
-                            match current_tab {
-                                AppTab::Catalog => rsx! {
-                                    CatalogBrowser {
-                                        catalog_manager: catalog_manager,
-                                        on_table_selected: load_table,
-                                        on_home_requested: move |_| {
-                                            app_state.set(AppState::CatalogConnection);
-                                            open_tabs.set(vec![AppTab::Catalog]);
-                                            active_tab_index.set(0);
-                                        }
+                        
+                        // Delete confirmation dialog
+                        if show_delete_confirmation() {
+                            DeleteConfirmationDialog {
+                                catalog_name: delete_catalog_name(),
+                                on_confirm: move |_| {
+                                    let catalog_name_to_delete = delete_catalog_name();
+                                    if let Err(e) = catalog_manager.with_mut(|manager| {
+                                        manager.delete_catalog(&catalog_name_to_delete)
+                                    }) {
+                                        error_message.set(Some(format!("Failed to delete catalog: {}", e)));
                                     }
+                                    show_delete_confirmation.set(false);
+                                    delete_catalog_name.set(String::new());
                                 },
-                                AppTab::Table { table, .. } => rsx! {
-                                    // Table sub-tabs
-                                    div {
-                                        class: "mb-6",
-                                        nav {
-                                            class: "flex justify-between items-center border-b border-gray-200",
-                                            div {
-                                                class: "flex space-x-8",
-                                            button {
-                                                class: format!(
-                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                                    if *table_view_tab.read() == TableViewTab::Overview {
-                                                        "border-blue-500 text-blue-600"
-                                                    } else {
-                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                    }
-                                                ),
-                                                onclick: move |_| table_view_tab.set(TableViewTab::Overview),
-                                                "📊 Overview"
-                                            }
-                                            button {
-                                                class: format!(
-                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                                    if *table_view_tab.read() == TableViewTab::Schema {
-                                                        "border-blue-500 text-blue-600"
-                                                    } else {
-                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                    }
-                                                ),
-                                                onclick: move |_| table_view_tab.set(TableViewTab::Schema),
-                                                "🏗️ Schema"
-                                            }
-                                            if table.partition_spec.is_some() {
-                                                button {
-                                                    class: format!(
-                                                        "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                                        if *table_view_tab.read() == TableViewTab::Partitions {
-                                                            "border-blue-500 text-blue-600"
-                                                        } else {
-                                                            "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                        }
-                                                    ),
-                                                    onclick: move |_| table_view_tab.set(TableViewTab::Partitions),
-                                                    "🧩 Partitions"
-                                                }
-                                            }
-                                            button {
-                                                class: format!(
-                                                    "py-2 px-1 border-b-2 font-medium text-sm transition-colors {}",
-                                                    if *table_view_tab.read() == TableViewTab::SnapshotHistory {
-                                                        "border-blue-500 text-blue-600"
-                                                    } else {
-                                                        "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                    }
-                                                ),
-                                                onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
-                                                "📈 Snapshot History"
-                                            }
-                                            }
-
-                                            // Refresh button
-                                            button {
-                                                class: "flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 hover:text-gray-900 transition-colors",
-                                                onclick: {
-                                                    let table_name = table.name.clone();
-                                                    let namespace = table.namespace.clone();
-                                                    let catalog_name = table.catalog_name.clone();
-                                                    move |_| {
-                                                        load_table((catalog_name.clone(), namespace.clone(), table_name.clone()));
-                                                    }
-                                                },
-                                                disabled: loading_table(),
-                                                if loading_table() {
-                                                    svg {
-                                                        class: "animate-spin -ml-1 mr-2 h-4 w-4",
-                                                        fill: "none",
-                                                        view_box: "0 0 24 24",
-                                                        circle {
-                                                            class: "opacity-25",
-                                                            cx: "12",
-                                                            cy: "12",
-                                                            r: "10",
-                                                            stroke: "currentColor",
-                                                            stroke_width: "4"
-                                                        }
-                                                        path {
-                                                            class: "opacity-75",
-                                                            fill: "currentColor",
-                                                            d: "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                                                        }
-                                                    }
-                                                } else {
-                                                    svg {
-                                                        class: "h-4 w-4 mr-2",
-                                                        fill: "none",
-                                                        stroke: "currentColor",
-                                                        view_box: "0 0 24 24",
-                                                        path {
-                                                            stroke_linecap: "round",
-                                                            stroke_linejoin: "round",
-                                                            stroke_width: "2",
-                                                            d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                                        }
-                                                    }
-                                                }
-                                                "Refresh"
-                                            }
-                                        }
-                                    }
-
-                                    // Table content
-                                    match *table_view_tab.read() {
-                                        TableViewTab::Overview => rsx! {
-                                            TableOverviewTab { table: table.clone() }
-                                        },
-                                        TableViewTab::Schema => rsx! {
-                                            TableSchemaTab { table: table.clone() }
-                                        },
-                                        TableViewTab::Partitions => rsx! {
-                                            TablePartitionsTab { table: table.clone() }
-                                        },
-                                        TableViewTab::SnapshotHistory => rsx! {
-                                            SnapshotTimelineTab { table: table.clone() }
-                                        },
-                                    }
+                                on_cancel: move |_| {
+                                    show_delete_confirmation.set(false);
+                                    delete_catalog_name.set(String::new());
                                 }
                             }
                         }
                     }
-                }
+                },
             }
         }
 
@@ -530,7 +513,7 @@ fn GlobalSearchModal(
     on_table_selected: EventHandler<(String, String, String)>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let mut all_tables = use_signal(|| Vec::<catalog::TableReference>::new());
+    let mut all_tables = use_signal(Vec::<catalog::TableReference>::new);
     let mut loading = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
 
@@ -741,6 +724,539 @@ fn GlobalSearchModal(
                         "Showing {filtered_tables.len().min(10)} of {filtered_tables.len()} tables"
                     } else {
                         "Use Ctrl+K to open this search anytime"
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn LeftNavigationPane(
+    collapsed: bool,
+    catalog_manager: Signal<CatalogManager>,
+    expanded_catalogs: Signal<std::collections::HashSet<String>>,
+    expanded_namespaces: Signal<std::collections::HashSet<String>>,
+    on_toggle_collapse: EventHandler<()>,
+    on_catalog_delete_requested: EventHandler<String>,
+    on_table_selected: EventHandler<(String, String, String)>,
+    on_add_catalog: EventHandler<()>,
+) -> Element {
+    let mut namespace_tables =
+        use_signal(std::collections::HashMap::<String, Vec<catalog::TableReference>>::new);
+    let mut loading_namespaces = use_signal(std::collections::HashSet::<String>::new);
+    let mut catalog_namespaces = use_signal(std::collections::HashMap::<String, Vec<String>>::new);
+
+    let load_catalog_namespaces = move |catalog_name: String| {
+        log::info!("Loading namespaces for catalog: {}", catalog_name);
+        spawn(async move {
+            // First, ensure the catalog is connected
+            let catalog_config = {
+                let manager = catalog_manager.read();
+                manager.get_saved_catalogs()
+                    .iter()
+                    .find(|c| c.name == catalog_name)
+                    .cloned()
+            };
+            
+            if let Some(config) = catalog_config {
+                // Try to connect the catalog if not already connected
+                let is_connected = catalog_manager.read()
+                    .get_connections()
+                    .iter()
+                    .any(|conn| conn.config.name == catalog_name);
+                
+                if !is_connected {
+                    log::info!("Catalog not connected, connecting: {}", catalog_name);
+                    let connect_result = {
+                        let mut manager_guard = catalog_manager.write();
+                        manager_guard.connect_catalog(config).await
+                    };
+                    
+                    match connect_result {
+                        Ok(_) => {
+                            log::info!("Successfully connected to catalog: {}", catalog_name);
+                        }
+                        Err(e) => {
+                            log::error!("Failed to connect catalog {}: {}", catalog_name, e);
+                            return;
+                        }
+                    }
+                }
+                
+                // Now try to list namespaces
+                log::info!("Loading namespaces for connected catalog: {}", catalog_name);
+                match catalog_manager.read().list_namespaces(&catalog_name).await {
+                    Ok(ns_list) => {
+                        log::info!("Loaded {} namespaces for catalog {}", ns_list.len(), catalog_name);
+                        catalog_namespaces.with_mut(|namespaces| {
+                            namespaces.insert(catalog_name.clone(), ns_list);
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Failed to load namespaces for catalog {}: {}", catalog_name, e);
+                    }
+                }
+            } else {
+                log::error!("Catalog configuration not found for: {}", catalog_name);
+            }
+        });
+    };
+
+    let mut toggle_catalog_expansion = move |catalog_name: String| {
+        log::info!("Toggling catalog expansion for: {}", catalog_name);
+        let should_expand = !expanded_catalogs.read().contains(&catalog_name);
+        
+        expanded_catalogs.with_mut(|expanded| {
+            if expanded.contains(&catalog_name) {
+                log::info!("Collapsing catalog: {}", catalog_name);
+                expanded.remove(&catalog_name);
+            } else {
+                log::info!("Expanding catalog: {}", catalog_name);
+                expanded.insert(catalog_name.clone());
+            }
+        });
+        
+        // If expanding, also trigger namespace loading
+        if should_expand {
+            load_catalog_namespaces(catalog_name);
+        }
+    };
+
+    let mut toggle_namespace_expansion = move |namespace_key: String| {
+        let namespace_parts: Vec<&str> = namespace_key.split("::").collect();
+        if namespace_parts.len() == 2 {
+            let catalog_name = namespace_parts[0];
+            let namespace_name = namespace_parts[1];
+
+            let should_expand = !expanded_namespaces.read().contains(&namespace_key);
+            
+            expanded_namespaces.with_mut(|expanded| {
+                if expanded.contains(&namespace_key) {
+                    expanded.remove(&namespace_key);
+                } else {
+                    expanded.insert(namespace_key.clone());
+                }
+            });
+            
+            if should_expand {
+
+                // Load tables for this namespace
+                let catalog_name = catalog_name.to_string();
+                let namespace_name = namespace_name.to_string();
+                let namespace_key_clone = namespace_key.clone();
+
+                spawn(async move {
+                    loading_namespaces.with_mut(|loading| {
+                        loading.insert(namespace_key_clone.clone());
+                    });
+
+                    match catalog_manager
+                        .read()
+                        .list_tables(&catalog_name, &namespace_name)
+                        .await
+                    {
+                        Ok(tables) => {
+                            namespace_tables.with_mut(|map| {
+                                map.insert(namespace_key_clone.clone(), tables);
+                            });
+                        }
+                        Err(e) => {
+                            log::error!(
+                                "Failed to load tables for namespace {}: {}",
+                                namespace_key_clone,
+                                e
+                            );
+                        }
+                    }
+
+                    loading_namespaces.with_mut(|loading| {
+                        loading.remove(&namespace_key_clone);
+                    });
+                });
+            }
+        }
+    };
+
+    let saved_catalogs = catalog_manager.read().get_saved_catalogs().to_vec();
+
+    rsx! {
+        div {
+            class: format!("bg-white border-r border-gray-200 flex flex-col transition-all duration-300 {}",
+                if collapsed { "w-12" } else { "w-80" }
+            ),
+
+            // Header with Toolbar
+            div {
+                class: "p-4 border-b border-gray-200 flex items-center justify-between",
+                if !collapsed {
+                    div {
+                        class: "flex items-center gap-2 flex-1",
+                        h2 {
+                            class: "text-lg font-semibold text-gray-900",
+                            "📚 Catalogs"
+                        }
+                        // Add Catalog Button
+                        button {
+                            onclick: move |_| on_add_catalog.call(()),
+                            class: "ml-auto px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1",
+                            title: "Add New Catalog",
+                            span { "+" }
+                            span { "Add" }
+                        }
+                    }
+                }
+                button {
+                    onclick: move |_| on_toggle_collapse.call(()),
+                    class: "p-1 rounded hover:bg-gray-100 transition-colors",
+                    svg {
+                        class: "h-5 w-5 text-gray-500",
+                        fill: "none",
+                        stroke: "currentColor",
+                        view_box: "0 0 24 24",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            d: if collapsed { "M9 5l7 7-7 7" } else { "M15 19l-7-7 7-7" }
+                        }
+                    }
+                }
+            }
+
+            if !collapsed {
+                // Catalog list
+                div {
+                    class: "flex-1 overflow-y-auto p-2",
+                    if saved_catalogs.is_empty() {
+                        div {
+                            class: "text-center py-8 text-gray-500",
+                            div { "📚" }
+                            div { class: "text-sm mt-2", "No catalogs configured" }
+                            div { class: "text-xs mt-1", "Click 'Add' to get started" }
+                        }
+                    } else {
+                        div {
+                            class: "space-y-1",
+                            for catalog_config in saved_catalogs.iter() {
+                                CatalogTreeNode {
+                                    catalog_name: catalog_config.name.clone(),
+                                    catalog_type: catalog_config.catalog_type.clone(),
+                                    expanded: expanded_catalogs.read().contains(&catalog_config.name),
+                                    expanded_namespaces: expanded_namespaces,
+                                    namespace_tables: namespace_tables,
+                                    loading_namespaces: loading_namespaces,
+                                    catalog_namespaces: catalog_namespaces,
+                                    catalog_manager: catalog_manager,
+                                    on_toggle_catalog: move |name: String| toggle_catalog_expansion(name),
+                                    on_toggle_namespace: move |key: String| toggle_namespace_expansion(key),
+                                    on_delete_catalog: on_catalog_delete_requested,
+                                    on_table_selected: on_table_selected
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn CatalogTreeNode(
+    catalog_name: String,
+    catalog_type: catalog::CatalogType,
+    expanded: bool,
+    expanded_namespaces: Signal<std::collections::HashSet<String>>,
+    namespace_tables: Signal<std::collections::HashMap<String, Vec<catalog::TableReference>>>,
+    loading_namespaces: Signal<std::collections::HashSet<String>>,
+    catalog_namespaces: Signal<std::collections::HashMap<String, Vec<String>>>,
+    catalog_manager: Signal<CatalogManager>,
+    on_toggle_catalog: EventHandler<String>,
+    on_toggle_namespace: EventHandler<String>,
+    on_delete_catalog: EventHandler<String>,
+    on_table_selected: EventHandler<(String, String, String)>,
+) -> Element {
+    // Get namespaces for this catalog from the shared state
+    let namespaces = catalog_namespaces.read().get(&catalog_name).cloned().unwrap_or_default();
+    
+    // Simple loading check: if expanded but no namespaces loaded yet
+    let loading_catalog = expanded && namespaces.is_empty();
+
+    let catalog_icon = match catalog_type {
+        catalog::CatalogType::Rest => "🌐",
+        catalog::CatalogType::Glue => "🔗",
+    };
+
+    rsx! {
+        div {
+            class: "select-none",
+
+            // Catalog header
+            div {
+                class: "flex items-center justify-between group hover:bg-gray-50 rounded px-2 py-1",
+
+                // Expand button and catalog name
+                div {
+                    class: "flex items-center flex-1 cursor-pointer",
+                    onclick: {
+                        let catalog_name_toggle = catalog_name.clone();
+                        move |_| {
+                            log::info!("Catalog clicked: {}", catalog_name_toggle);
+                            on_toggle_catalog.call(catalog_name_toggle.clone())
+                        }
+                    },
+
+                    // Expand/collapse icon
+                    div {
+                        class: "w-4 h-4 mr-1 flex items-center justify-center",
+                        if loading_catalog {
+                            div {
+                                class: "animate-spin rounded-full h-3 w-3 border border-gray-300 border-t-blue-600"
+                            }
+                        } else {
+                            svg {
+                                class: format!("h-3 w-3 text-gray-500 transition-transform {}",
+                                    if expanded { "rotate-90" } else { "" }
+                                ),
+                                fill: "none",
+                                stroke: "currentColor",
+                                view_box: "0 0 24 24",
+                                path {
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    stroke_width: "2",
+                                    d: "M9 5l7 7-7 7"
+                                }
+                            }
+                        }
+                    }
+
+                    // Catalog icon and name
+                    span { class: "text-sm mr-2", "{catalog_icon}" }
+                    span { class: "text-sm font-medium text-gray-900 truncate", "{catalog_name}" }
+                }
+
+                // Delete button
+                button {
+                    onclick: {
+                        let catalog_name_delete = catalog_name.clone();
+                        move |e: dioxus::prelude::Event<dioxus::html::MouseData>| {
+                            e.stop_propagation();
+                            on_delete_catalog.call(catalog_name_delete.clone());
+                        }
+                    },
+                    class: "opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all",
+                    title: "Delete catalog",
+                    svg {
+                        class: "h-3 w-3 text-red-500",
+                        fill: "none",
+                        stroke: "currentColor",
+                        view_box: "0 0 24 24",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            d: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                        }
+                    }
+                }
+            }
+
+            // Namespaces (when expanded)
+            if expanded {
+                div {
+                    class: "ml-4 mt-1 space-y-1",
+                    for namespace in namespaces.iter() {
+                        NamespaceTreeNode {
+                            catalog_name: catalog_name.clone(),
+                            namespace_name: namespace.clone(),
+                            namespace_key: format!("{}::{}", catalog_name, namespace),
+                            expanded: expanded_namespaces.read().contains(&format!("{}::{}", catalog_name, namespace)),
+                            namespace_tables: namespace_tables,
+                            loading_namespaces: loading_namespaces,
+                            on_toggle_namespace: on_toggle_namespace,
+                            on_table_selected: on_table_selected
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NamespaceTreeNode(
+    catalog_name: String,
+    namespace_name: String,
+    namespace_key: String,
+    expanded: bool,
+    namespace_tables: Signal<std::collections::HashMap<String, Vec<catalog::TableReference>>>,
+    loading_namespaces: Signal<std::collections::HashSet<String>>,
+    on_toggle_namespace: EventHandler<String>,
+    on_table_selected: EventHandler<(String, String, String)>,
+) -> Element {
+    let is_loading = loading_namespaces.read().contains(&namespace_key);
+    let tables = namespace_tables
+        .read()
+        .get(&namespace_key)
+        .cloned()
+        .unwrap_or_default();
+
+    rsx! {
+        div {
+            class: "select-none",
+
+            // Namespace header
+            div {
+                class: "flex items-center hover:bg-gray-50 rounded px-2 py-1 cursor-pointer",
+                onclick: move |_| on_toggle_namespace.call(namespace_key.clone()),
+
+                // Expand/collapse icon
+                div {
+                    class: "w-4 h-4 mr-1 flex items-center justify-center",
+                    if is_loading {
+                        div {
+                            class: "animate-spin rounded-full h-3 w-3 border border-gray-300 border-t-blue-600"
+                        }
+                    } else {
+                        svg {
+                            class: format!("h-3 w-3 text-gray-400 transition-transform {}",
+                                if expanded { "rotate-90" } else { "" }
+                            ),
+                            fill: "none",
+                            stroke: "currentColor",
+                            view_box: "0 0 24 24",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "2",
+                                d: "M9 5l7 7-7 7"
+                            }
+                        }
+                    }
+                }
+
+                // Namespace icon and name
+                span { class: "text-sm mr-2", "📁" }
+                span {
+                    class: "text-sm text-gray-700 truncate",
+                    "{namespace_name}"
+                }
+            }
+
+            // Tables (when expanded)
+            if expanded && !is_loading {
+                div {
+                    class: "ml-4 mt-1 space-y-1",
+                    if tables.is_empty() {
+                        div {
+                            class: "px-2 py-1 text-xs text-gray-500 italic",
+                            "No tables found"
+                        }
+                    } else {
+                        for table in tables.iter() {
+                            div {
+                                class: format!("flex items-center px-2 py-1 rounded transition-colors {}",
+                                    if table.table_type == catalog::TableType::Iceberg {
+                                        "hover:bg-blue-50 cursor-pointer"
+                                    } else {
+                                        "cursor-not-allowed opacity-50"
+                                    }
+                                ),
+                                onclick: {
+                                    let catalog_name = catalog_name.clone();
+                                    let namespace_name = namespace_name.clone();
+                                    let table_name = table.name.clone();
+                                    let table_type = table.table_type;
+                                    move |_| {
+                                        if table_type == catalog::TableType::Iceberg {
+                                            on_table_selected.call((catalog_name.clone(), namespace_name.clone(), table_name.clone()));
+                                        }
+                                    }
+                                },
+
+                                span {
+                                    class: "text-sm mr-2",
+                                    if table.table_type == catalog::TableType::Iceberg { "🧊" } else { "📄" }
+                                }
+                                span {
+                                    class: format!("text-xs truncate {}",
+                                        if table.table_type == catalog::TableType::Iceberg {
+                                            "text-gray-800"
+                                        } else {
+                                            "text-gray-500"
+                                        }
+                                    ),
+                                    "{table.name}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn DeleteConfirmationDialog(
+    catalog_name: String,
+    on_confirm: EventHandler<()>,
+    on_cancel: EventHandler<()>,
+) -> Element {
+    rsx! {
+        // Modal overlay
+        div {
+            class: "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center",
+            onclick: move |_| on_cancel.call(()),
+
+            // Modal content
+            div {
+                class: "bg-white rounded-lg shadow-xl max-w-md w-full mx-4",
+                onclick: |e| e.stop_propagation(),
+
+                // Header
+                div {
+                    class: "flex items-center justify-between p-4 border-b border-gray-200",
+                    h3 {
+                        class: "text-lg font-medium text-gray-900",
+                        "🗑️ Delete Catalog"
+                    }
+                    button {
+                        onclick: move |_| on_cancel.call(()),
+                        class: "text-gray-400 hover:text-gray-600",
+                        "✕"
+                    }
+                }
+
+                // Content
+                div {
+                    class: "p-4",
+                    p {
+                        class: "text-sm text-gray-600 mb-4",
+                        "Are you sure you want to delete the catalog \""
+                        span { class: "font-medium", "{catalog_name}" }
+                        "\"? This action cannot be undone."
+                    }
+                    p {
+                        class: "text-xs text-gray-500",
+                        "Note: This will only remove the catalog from Hielo's saved connections. It will not affect the actual catalog or its data."
+                    }
+                }
+
+                // Actions
+                div {
+                    class: "flex justify-end space-x-3 p-4 border-t border-gray-200",
+                    button {
+                        onclick: move |_| on_cancel.call(()),
+                        class: "px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors",
+                        "Cancel"
+                    }
+                    button {
+                        onclick: move |_| on_confirm.call(()),
+                        class: "px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors",
+                        "Delete"
                     }
                 }
             }
