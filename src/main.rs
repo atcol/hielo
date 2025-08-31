@@ -68,6 +68,7 @@ fn App() -> Element {
     let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
+        log::info!("Loading table: {} from namespace: {} in catalog: {}", table_name, namespace, catalog_name);
         spawn(async move {
             loading_table.set(true);
             error_message.set(None);
@@ -78,12 +79,14 @@ fn App() -> Element {
                 .await
             {
                 Ok(iceberg_table) => {
+                    log::info!("Successfully loaded iceberg table, converting...");
                     match iceberg_adapter::convert_iceberg_table(
                         &iceberg_table,
                         namespace.clone(),
                         catalog_name.clone(),
                     ) {
                         Ok(hielo_table) => {
+                            log::info!("Table converted successfully, creating tab...");
                             // Create a unique tab ID
                             let tab_id = format!("{}.{}", namespace, table_name);
                             let new_tab = AppTab::Table {
@@ -106,25 +109,30 @@ fn App() -> Element {
 
                             if let Some(index) = existing_index {
                                 // Switch to existing tab
+                                log::info!("Switching to existing tab at index: {}", index);
                                 active_tab_index.set(index);
                             } else {
                                 // Add new tab and switch to it
                                 let mut tabs = open_tabs.read().clone();
                                 tabs.push(new_tab);
                                 let new_index = tabs.len() - 1;
+                                log::info!("Adding new tab and switching to index: {}", new_index);
                                 open_tabs.set(tabs);
                                 active_tab_index.set(new_index);
                             }
 
                             // Ensure we're in connected state
+                            log::info!("Setting app state to Connected");
                             app_state.set(AppState::Connected);
                         }
                         Err(e) => {
+                            log::error!("Failed to convert table: {}", e);
                             error_message.set(Some(format!("Failed to convert table: {}", e)));
                         }
                     }
                 }
                 Err(e) => {
+                    log::error!("Failed to load table: {}", e);
                     error_message.set(Some(format!("Failed to load table: {}", e)));
                 }
             }
@@ -288,23 +296,70 @@ fn App() -> Element {
                             
                             // Main content
                             main {
-                                class: "flex-1 p-6 overflow-y-auto",
-                                div {
-                                    class: "text-center py-12",
-                                    h2 {
-                                        class: "text-2xl font-semibold text-gray-900 mb-4",
-                                        "Welcome to Hielo! 🧊"
-                                    }
-                                    p {
-                                        class: "text-gray-600 mb-6",
-                                        "Get started by adding a catalog connection, then browse your tables using the left navigation pane."
-                                    }
+                                class: "flex-1 flex flex-col overflow-hidden",
+                                
+                                // Tab bar
+                                if open_tabs.read().len() > 1 {
                                     div {
-                                        class: "text-sm text-gray-500 space-y-2",
-                                        p { "➕ Click 'Add' in the left panel to connect to a catalog" }
-                                        p { "💡 Press Ctrl+K to search for tables globally" }
-                                        p { "🌳 Click catalog names to expand namespaces" }
-                                        p { "🧊 Click Iceberg tables to open them" }
+                                        class: "flex border-b border-gray-200 bg-gray-50",
+                                        for (index, tab) in open_tabs.read().iter().enumerate() {
+                                            button {
+                                                onclick: move |_| active_tab_index.set(index),
+                                                class: format!("px-4 py-2 text-sm font-medium border-r border-gray-200 {}",
+                                                    if index == active_tab_index() {
+                                                        "bg-white text-blue-600 border-b-2 border-blue-600"
+                                                    } else {
+                                                        "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                                    }
+                                                ),
+                                                {
+                                                    match tab {
+                                                        AppTab::Catalog => "📁 Catalogs".to_string(),
+                                                        AppTab::Table { table, .. } => format!("📊 {}", table.name),
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Tab content
+                                div {
+                                    class: "flex-1 overflow-y-auto",
+                                    if let Some(current_tab) = open_tabs.read().get(active_tab_index()) {
+                                        match current_tab {
+                                            AppTab::Catalog => rsx! {
+                                                div {
+                                                    class: "p-6",
+                                                    div {
+                                                        class: "text-center py-12",
+                                                        h2 {
+                                                            class: "text-2xl font-semibold text-gray-900 mb-4",
+                                                            "Welcome to Hielo! 🧊"
+                                                        }
+                                                        p {
+                                                            class: "text-gray-600 mb-6",
+                                                            "Get started by adding a catalog connection, then browse your tables using the left navigation pane."
+                                                        }
+                                                        div {
+                                                            class: "text-sm text-gray-500 space-y-2",
+                                                            p { "➕ Click 'Add' in the left panel to connect to a catalog" }
+                                                            p { "💡 Press Ctrl+K to search for tables globally" }
+                                                            p { "🌳 Click catalog names to expand namespaces" }
+                                                            p { "🧊 Click Iceberg tables to open them" }
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            AppTab::Table { table, .. } => rsx! {
+                                                div {
+                                                    class: "h-full p-6",
+                                                    components::TableOverviewTab {
+                                                        table: table.clone()
+                                                    }
+                                                }
+                                            },
+                                        }
                                     }
                                 }
                             }
