@@ -32,7 +32,7 @@ script = []
 #copyright = "Copyright (c) 2025 Wellow Systems Limited"
 #category = "DeveloperTool"
 #short_description = "Apache Iceberg table metadata viewer"
-#long_description = "A modern desktop application for visualizing Apache Iceberg table schemas, snapshots, and metadata"
+#long_description = "A modern desktop application for visualising Apache Iceberg table schemas, snapshots, and metadata"
 #
 #[bundle.linux]
 #depends = ["libwebkit2gtk-4.1-dev", "libgtk-3-dev"]

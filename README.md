@@ -1,6 +1,6 @@
 # 🧊 Hielo
 
-A modern, native desktop application for visualizing Apache Iceberg table metadata and snapshot history.
+A modern, native desktop application for visualising Apache Iceberg table metadata and snapshot history.
 Built with Rust and Dioxus for performance and cross-platform compatibility.
 
 *Hielo* (Spanish for "ice") is a lightweight, fast tool for exploring your Iceberg tables.
@@ -8,7 +8,7 @@ Built with Rust and Dioxus for performance and cross-platform compatibility.
 ## Features
 
 - **🔗 Multiple Catalog Support**: Connect to REST and AWS Glue catalogs
-- **📋 Schema Visualization**: Explore table schemas with nested field support
+- **📋 Schema Visualisation**: Explore table schemas with nested field support
 - **🔄 Schema Evolution**: Compare schema changes across versions
 - **🧩 Partition Management**: View partition specifications and transform functions
 - **📈 Snapshot Timeline**: Track table history with detailed operation information
@@ -22,11 +22,11 @@ Get a comprehensive view of your table metadata, including location, snapshot in
 ![Table Overview](screenshots/table-overview.png)
 *Clean overview of table metadata with key information at a glance*
 
-### Schema Visualization
+### Schema Visualisation
 Explore your table schema with detailed field information, types, and documentation. View schema evolution over time with side-by-side comparisons.
 
 ![Schema Tab](screenshots/schema-tab.png)
-*Detailed schema visualization with field types, requirements, and descriptions*
+*Detailed schema visualisation with field types, requirements, and descriptions*
 
 ![Schema Evolution](screenshots/schema-evolution.png)
 *Schema evolution comparison showing field changes across versions*
