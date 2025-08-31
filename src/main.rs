@@ -55,7 +55,7 @@ fn App() -> Element {
     });
     let mut open_tabs = use_signal(|| vec![AppTab::Catalog]);
     let mut active_tab_index = use_signal(|| 0usize);
-    let table_view_tab = use_signal(|| TableViewTab::Overview);
+    let mut table_view_tab = use_signal(|| TableViewTab::Overview);
     let mut catalog_manager = use_signal(CatalogManager::new);
     let mut loading_table = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
@@ -353,9 +353,82 @@ fn App() -> Element {
                                             },
                                             AppTab::Table { table, .. } => rsx! {
                                                 div {
-                                                    class: "h-full p-6",
-                                                    components::TableOverviewTab {
-                                                        table: table.clone()
+                                                    class: "h-full flex flex-col",
+                                                    
+                                                    // Table sub-tabs
+                                                    div {
+                                                        class: "flex border-b border-gray-200 bg-gray-50 px-6",
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::Overview),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::Overview) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Overview"
+                                                        }
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::Schema),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::Schema) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Schema"
+                                                        }
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::Partitions),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::Partitions) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Partitions"
+                                                        }
+                                                        button {
+                                                            onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
+                                                            class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                if matches!(table_view_tab(), TableViewTab::SnapshotHistory) {
+                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                } else {
+                                                                    "text-gray-500 hover:text-gray-700"
+                                                                }
+                                                            ),
+                                                            "Snapshots"
+                                                        }
+                                                    }
+                                                    
+                                                    // Table sub-tab content
+                                                    div {
+                                                        class: "flex-1 overflow-y-auto p-6",
+                                                        match table_view_tab() {
+                                                            TableViewTab::Overview => rsx! {
+                                                                components::TableOverviewTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                            TableViewTab::Schema => rsx! {
+                                                                components::TableSchemaTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                            TableViewTab::Partitions => rsx! {
+                                                                components::TablePartitionsTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                            TableViewTab::SnapshotHistory => rsx! {
+                                                                components::SnapshotTimelineTab {
+                                                                    table: table.clone()
+                                                                }
+                                                            },
+                                                        }
                                                     }
                                                 }
                                             },
