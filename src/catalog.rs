@@ -202,10 +202,12 @@ impl CatalogManager {
             .get("region")
             .cloned()
             .unwrap_or_else(|| "us-east-1".to_string());
-        props.insert("region".to_string(), region);
+        props.insert("aws.region".to_string(), region.clone());
 
         if let Some(profile) = config.config.get("profile") {
-            props.insert("profile".to_string(), profile.clone());
+            if !profile.is_empty() {
+                props.insert("aws.profile-name".to_string(), profile.clone());
+            }
         }
 
         if let Some(endpoint) = config.config.get("endpoint_url") {
@@ -218,15 +220,23 @@ impl CatalogManager {
             .build();
 
         log::info!(
-            "Creating Glue catalog with config - warehouse: '{}', region: '{}', props: {:?}",
+            "Creating Glue catalog with config - warehouse: '{}', region: '{}', profile: '{}', props: {:?}",
             warehouse,
-            props.get("region").unwrap_or(&"N/A".to_string()),
+            props.get("aws.region").unwrap_or(&"N/A".to_string()),
+            props.get("aws.profile-name").unwrap_or(&"default".to_string()),
             props.keys().collect::<Vec<_>>()
         );
 
-        // Ensure region is available for AWS SDK - try multiple methods
-        if let Some(region) = props.get("region") {
-            // Set environment variables as fallback
+        // Set AWS environment variables if profile is specified
+        if let Some(profile) = props.get("aws.profile-name") {
+            unsafe {
+                std::env::set_var("AWS_PROFILE", profile);
+            }
+            log::info!("Set AWS_PROFILE environment variable to: {}", profile);
+        }
+        
+        // Ensure region is available for AWS SDK
+        if let Some(region) = props.get("aws.region") {
             unsafe {
                 std::env::set_var("AWS_DEFAULT_REGION", region);
                 std::env::set_var("AWS_REGION", region);
