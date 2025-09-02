@@ -23,6 +23,11 @@ on:
         required: false
         type: boolean
         default: true
+      version_tag:
+        description: 'Version tag to include in binary names'
+        required: false
+        type: string
+        default: ''
     outputs:
       artifact_names:
         description: 'JSON array of artifact names created'
@@ -188,39 +193,63 @@ jobs:
         mkdir -p artifacts
         BINARY_PATH="target/${{ matrix.target }}/${{ inputs.build_profile }}/${{ matrix.artifact_name }}"
         
+        # Create final asset name with optional version tag
+        BASE_NAME="${{ matrix.asset_name }}"
+        VERSION_TAG="${{ inputs.version_tag }}"
+        
+        if [[ -n "$VERSION_TAG" ]]; then
+          # Insert version tag before file extension (if any)
+          if [[ "$BASE_NAME" == *.* ]]; then
+            # Has extension (e.g., hielo-windows-x86_64.exe -> hielo-windows-x86_64-v1.0.0.exe)
+            BASENAME_NO_EXT="${BASE_NAME%.*}"
+            EXTENSION="${BASE_NAME##*.}"
+            FINAL_ASSET_NAME="${BASENAME_NO_EXT}-${VERSION_TAG}.${EXTENSION}"
+          else
+            # No extension (e.g., hielo-linux-x86_64 -> hielo-linux-x86_64-v1.0.0)
+            FINAL_ASSET_NAME="${BASE_NAME}-${VERSION_TAG}"
+          fi
+        else
+          FINAL_ASSET_NAME="$BASE_NAME"
+        fi
+        
+        echo "Final asset name: $FINAL_ASSET_NAME"
+        
         # Copy binary to artifacts directory
-        cp "$BINARY_PATH" "artifacts/${{ matrix.asset_name }}"
+        cp "$BINARY_PATH" "artifacts/$FINAL_ASSET_NAME"
         
         # Create checksum using the appropriate tool for each platform
         cd artifacts
         if [[ "${{ runner.os }}" == "Windows" ]]; then
           # Windows: Use PowerShell Get-FileHash
-          powershell -command "(Get-FileHash -Algorithm SHA256 '${{ matrix.asset_name }}').Hash.ToLower() + '  ${{ matrix.asset_name }}'" > ${{ matrix.asset_name }}.sha256
+          powershell -command "(Get-FileHash -Algorithm SHA256 '$FINAL_ASSET_NAME').Hash.ToLower() + '  $FINAL_ASSET_NAME'" > $FINAL_ASSET_NAME.sha256
         elif [[ "${{ runner.os }}" == "macOS" ]]; then
           # macOS: Use shasum
-          shasum -a 256 "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
+          shasum -a 256 "$FINAL_ASSET_NAME" > "$FINAL_ASSET_NAME.sha256"
         else
           # Linux: Use sha256sum
-          sha256sum "${{ matrix.asset_name }}" > "${{ matrix.asset_name }}.sha256"
+          sha256sum "$FINAL_ASSET_NAME" > "$FINAL_ASSET_NAME.sha256"
         fi
         
         echo "Created artifacts:"
         ls -la
+        
+        # Export the final asset name for use in upload step
+        echo "FINAL_ASSET_NAME=$FINAL_ASSET_NAME" >> $GITHUB_ENV
       shell: bash
 
     - name: Upload build artifacts
       if: inputs.upload_artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.asset_name }}
+        name: ${{ env.FINAL_ASSET_NAME }}
         path: |
-          artifacts/${{ matrix.asset_name }}
-          artifacts/${{ matrix.asset_name }}.sha256
+          artifacts/${{ env.FINAL_ASSET_NAME }}
+          artifacts/${{ env.FINAL_ASSET_NAME }}.sha256
         retention-days: ${{ inputs.artifact_retention_days }}
 
     - name: Set artifact names output
       id: set_artifacts
       if: inputs.upload_artifacts
       run: |
-        echo "names=[\"${{ matrix.asset_name }}\"]" >> $GITHUB_OUTPUT
+        echo "names=[\"$FINAL_ASSET_NAME\"]" >> $GITHUB_OUTPUT
       shell: bash
