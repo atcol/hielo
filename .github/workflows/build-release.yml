@@ -16,6 +16,7 @@ jobs:
       upload_artifacts: true
       artifact_retention_days: 90  # Keep release builds longer
       build_profile: 'release'
+      version_tag: ${{ github.ref_name }}
 
   # Create GitHub Release
   release:
