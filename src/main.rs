@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+use dioxus::events::Key;
 use dioxus::prelude::*;
 
 mod catalog;
@@ -782,6 +783,127 @@ fn GlobalSearchModal(
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct FilteredTreeNode {
+    catalog_name: String,
+    catalog_type: catalog::CatalogType,
+    show_catalog: bool,
+    force_expand_catalog: bool,
+    filtered_namespaces: Vec<FilteredNamespaceNode>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct FilteredNamespaceNode {
+    namespace_name: String,
+    namespace_key: String,
+    show_namespace: bool,
+    force_expand_namespace: bool,
+    filtered_tables: Vec<catalog::TableReference>,
+}
+
+fn compute_filtered_tree(
+    saved_catalogs: &[catalog::CatalogConfig],
+    catalog_namespaces: &std::collections::HashMap<String, Vec<String>>,
+    namespace_tables: &std::collections::HashMap<String, Vec<catalog::TableReference>>,
+    filter_query: &str,
+) -> Vec<FilteredTreeNode> {
+    if filter_query.is_empty() {
+        // No filter - return structure indicating all items should be shown normally
+        return saved_catalogs
+            .iter()
+            .map(|catalog| FilteredTreeNode {
+                catalog_name: catalog.name.clone(),
+                catalog_type: catalog.catalog_type.clone(),
+                show_catalog: true,
+                force_expand_catalog: false,
+                filtered_namespaces: vec![], // Will use normal rendering
+            })
+            .collect();
+    }
+
+    let query_lower = filter_query.to_lowercase();
+    let mut result = Vec::new();
+
+    for catalog_config in saved_catalogs {
+        let catalog_name = &catalog_config.name;
+        let catalog_matches = catalog_name.to_lowercase().contains(&query_lower);
+
+        // Get namespaces for this catalog
+        let namespaces = catalog_namespaces
+            .get(catalog_name)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut filtered_namespaces = Vec::new();
+        let mut has_matching_children = false;
+
+        for namespace_name in &namespaces {
+            let namespace_key = format!("{}::{}", catalog_name, namespace_name);
+            let namespace_matches = namespace_name.to_lowercase().contains(&query_lower);
+
+            // Get tables for this namespace
+            let tables = namespace_tables
+                .get(&namespace_key)
+                .cloned()
+                .unwrap_or_default();
+
+            let filtered_tables: Vec<catalog::TableReference> = tables
+                .into_iter()
+                .filter(|table| table.name.to_lowercase().contains(&query_lower))
+                .collect();
+
+            let has_matching_tables = !filtered_tables.is_empty();
+            let table_matches = has_matching_tables;
+
+            // Show namespace if it matches OR has matching tables
+            if namespace_matches || table_matches {
+                filtered_namespaces.push(FilteredNamespaceNode {
+                    namespace_name: namespace_name.clone(),
+                    namespace_key: namespace_key.clone(),
+                    show_namespace: true,
+                    force_expand_namespace: table_matches, // Auto-expand if contains matching tables
+                    filtered_tables,
+                });
+                has_matching_children = true;
+            }
+        }
+
+        // Show catalog if it matches OR has matching children
+        if catalog_matches || has_matching_children {
+            result.push(FilteredTreeNode {
+                catalog_name: catalog_name.clone(),
+                catalog_type: catalog_config.catalog_type.clone(),
+                show_catalog: true,
+                force_expand_catalog: has_matching_children, // Auto-expand if contains matches
+                filtered_namespaces,
+            });
+        }
+    }
+
+    result
+}
+
+fn compute_filter_counts(filtered_tree: &[FilteredTreeNode]) -> (usize, usize, usize) {
+    let mut catalog_count = 0;
+    let mut namespace_count = 0;
+    let mut table_count = 0;
+
+    for catalog in filtered_tree {
+        if catalog.show_catalog {
+            catalog_count += 1;
+        }
+
+        for namespace in &catalog.filtered_namespaces {
+            if namespace.show_namespace {
+                namespace_count += 1;
+            }
+            table_count += namespace.filtered_tables.len();
+        }
+    }
+
+    (catalog_count, namespace_count, table_count)
+}
+
 #[component]
 fn LeftNavigationPane(
     collapsed: bool,
@@ -797,6 +919,19 @@ fn LeftNavigationPane(
         use_signal(std::collections::HashMap::<String, Vec<catalog::TableReference>>::new);
     let mut loading_namespaces = use_signal(std::collections::HashSet::<String>::new);
     let mut catalog_namespaces = use_signal(std::collections::HashMap::<String, Vec<String>>::new);
+    let mut nav_filter_query = use_signal(String::new);
+    let mut debounced_filter_query = use_signal(String::new);
+
+    // Debounce filter input
+    use_effect(move || {
+        let query = nav_filter_query();
+        spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            if nav_filter_query() == query {
+                debounced_filter_query.set(query);
+            }
+        });
+    });
 
     let load_catalog_namespaces = move |catalog_name: String| {
         log::info!("Loading namespaces for catalog: {}", catalog_name);
@@ -940,6 +1075,21 @@ fn LeftNavigationPane(
 
     let saved_catalogs = catalog_manager.read().get_saved_catalogs().to_vec();
 
+    // Add filtered tree computation using debounced query
+    let filtered_tree = {
+        let query = debounced_filter_query();
+        let namespaces = catalog_namespaces();
+        let tables = namespace_tables();
+        compute_filtered_tree(&saved_catalogs, &namespaces, &tables, &query)
+    };
+
+    // Compute filter result counts
+    let (catalog_count, namespace_count, table_count) = if !debounced_filter_query().is_empty() {
+        compute_filter_counts(&filtered_tree)
+    } else {
+        (0, 0, 0)
+    };
+
     rsx! {
         div {
             class: format!("bg-white border-r border-gray-200 flex flex-col transition-all duration-300 {}",
@@ -948,37 +1098,120 @@ fn LeftNavigationPane(
 
             // Header with Toolbar
             div {
-                class: "p-4 border-b border-gray-200 flex items-center justify-between",
+                class: "p-4 border-b border-gray-200",
                 if !collapsed {
+                    // Search input section
                     div {
-                        class: "flex items-center gap-2 flex-1",
-                        h2 {
-                            class: "text-lg font-semibold text-gray-900",
-                            "📚 Catalogs"
-                        }
-                        // Add Catalog Button
-                        button {
-                            onclick: move |_| on_add_catalog.call(()),
-                            class: "ml-auto px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1",
-                            title: "Add New Catalog",
-                            span { "+" }
-                            span { "Add" }
+                        class: "mb-3",
+                        div {
+                            class: "relative",
+                            div {
+                                class: "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none",
+                                svg {
+                                    class: "h-4 w-4 text-gray-400",
+                                    fill: "none",
+                                    stroke: "currentColor",
+                                    view_box: "0 0 24 24",
+                                    path {
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        stroke_width: "2",
+                                        d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                    }
+                                }
+                            }
+                            input {
+                                r#type: "text",
+                                value: "{nav_filter_query()}",
+                                oninput: move |evt| nav_filter_query.set(evt.value()),
+                                onkeydown: move |evt| {
+                                    if evt.key() == Key::Escape {
+                                        nav_filter_query.set(String::new());
+                                    }
+                                },
+                                class: "block w-full pl-9 pr-8 py-1.5 text-sm border border-gray-300 rounded-md bg-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500",
+                                placeholder: "Filter catalogs, namespaces, tables..."
+                            }
+                            // Clear button
+                            if !nav_filter_query().is_empty() {
+                                button {
+                                    onclick: move |_| nav_filter_query.set(String::new()),
+                                    class: "absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-gray-600",
+                                    svg {
+                                        class: "h-4 w-4",
+                                        fill: "none",
+                                        stroke: "currentColor",
+                                        view_box: "0 0 24 24",
+                                        path {
+                                            stroke_linecap: "round",
+                                            stroke_linejoin: "round",
+                                            stroke_width: "2",
+                                            d: "M6 18L18 6M6 6l12 12"
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                button {
-                    onclick: move |_| on_toggle_collapse.call(()),
-                    class: "p-1 rounded hover:bg-gray-100 transition-colors",
-                    svg {
-                        class: "h-5 w-5 text-gray-500",
-                        fill: "none",
-                        stroke: "currentColor",
-                        view_box: "0 0 24 24",
-                        path {
-                            stroke_linecap: "round",
-                            stroke_linejoin: "round",
-                            stroke_width: "2",
-                            d: if collapsed { "M9 5l7 7-7 7" } else { "M15 19l-7-7 7-7" }
+
+                // Filter result counts
+                if !nav_filter_query().is_empty() {
+                    div {
+                        class: "px-3 py-1 text-xs text-gray-600 bg-gray-50 border-b border-gray-200",
+                        if catalog_count > 0 || namespace_count > 0 || table_count > 0 {
+                            span {
+                                "Showing "
+                                span { class: "font-medium", "{catalog_count}" }
+                                " catalogs, "
+                                span { class: "font-medium", "{namespace_count}" }
+                                " namespaces, "
+                                span { class: "font-medium", "{table_count}" }
+                                " tables"
+                            }
+                        } else if !debounced_filter_query().is_empty() {
+                            span {
+                                class: "text-gray-500 italic",
+                                "No matching results found"
+                            }
+                        }
+                    }
+                }
+
+                // Title and controls
+                div {
+                    class: "flex items-center justify-between",
+                    if !collapsed {
+                        div {
+                            class: "flex items-center gap-2 flex-1",
+                            h2 {
+                                class: "text-lg font-semibold text-gray-900",
+                                "📚 Catalogs"
+                            }
+                            // Add Catalog Button
+                            button {
+                                onclick: move |_| on_add_catalog.call(()),
+                                class: "ml-auto px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors flex items-center gap-1",
+                                title: "Add New Catalog",
+                                span { "+" }
+                                span { "Add" }
+                            }
+                        }
+                    }
+                    button {
+                        onclick: move |_| on_toggle_collapse.call(()),
+                        class: "p-1 rounded hover:bg-gray-100 transition-colors",
+                        svg {
+                            class: "h-5 w-5 text-gray-500",
+                            fill: "none",
+                            stroke: "currentColor",
+                            view_box: "0 0 24 24",
+                            path {
+                                stroke_linecap: "round",
+                                stroke_linejoin: "round",
+                                stroke_width: "2",
+                                d: if collapsed { "M9 5l7 7-7 7" } else { "M15 19l-7-7 7-7" }
+                            }
                         }
                     }
                 }
@@ -998,11 +1231,16 @@ fn LeftNavigationPane(
                     } else {
                         div {
                             class: "space-y-1",
-                            for catalog_config in saved_catalogs.iter() {
+                            for filtered_catalog in filtered_tree.iter() {
                                 CatalogTreeNode {
-                                    catalog_name: catalog_config.name.clone(),
-                                    catalog_type: catalog_config.catalog_type.clone(),
-                                    expanded: expanded_catalogs.read().contains(&catalog_config.name),
+                                    catalog_name: filtered_catalog.catalog_name.clone(),
+                                    catalog_type: filtered_catalog.catalog_type.clone(),
+                                    expanded: expanded_catalogs.read().contains(&filtered_catalog.catalog_name) || filtered_catalog.force_expand_catalog,
+                                    filtered_namespaces: if nav_filter_query().is_empty() {
+                                        None
+                                    } else {
+                                        Some(filtered_catalog.filtered_namespaces.clone())
+                                    },
                                     expanded_namespaces: expanded_namespaces,
                                     namespace_tables: namespace_tables,
                                     loading_namespaces: loading_namespaces,
@@ -1027,6 +1265,7 @@ fn CatalogTreeNode(
     catalog_name: String,
     catalog_type: catalog::CatalogType,
     expanded: bool,
+    filtered_namespaces: Option<Vec<FilteredNamespaceNode>>, // New parameter
     expanded_namespaces: Signal<std::collections::HashSet<String>>,
     namespace_tables: Signal<std::collections::HashMap<String, Vec<catalog::TableReference>>>,
     loading_namespaces: Signal<std::collections::HashSet<String>>,
@@ -1037,15 +1276,22 @@ fn CatalogTreeNode(
     on_delete_catalog: EventHandler<String>,
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
-    // Get namespaces for this catalog from the shared state
-    let namespaces = catalog_namespaces
-        .read()
-        .get(&catalog_name)
-        .cloned()
-        .unwrap_or_default();
+    // Use filtered namespaces if provided, otherwise use normal logic
+    let namespaces_to_render = if let Some(filtered) = &filtered_namespaces {
+        filtered
+            .iter()
+            .map(|fn_node| fn_node.namespace_name.clone())
+            .collect::<Vec<_>>()
+    } else {
+        catalog_namespaces
+            .read()
+            .get(&catalog_name)
+            .cloned()
+            .unwrap_or_default()
+    };
 
     // Simple loading check: if expanded but no namespaces loaded yet
-    let loading_catalog = expanded && namespaces.is_empty();
+    let loading_catalog = expanded && namespaces_to_render.is_empty();
 
     let catalog_icon = match catalog_type {
         catalog::CatalogType::Rest => "🌐",
@@ -1131,16 +1377,29 @@ fn CatalogTreeNode(
             if expanded {
                 div {
                     class: "ml-4 mt-1 space-y-1",
-                    for namespace in namespaces.iter() {
-                        NamespaceTreeNode {
-                            catalog_name: catalog_name.clone(),
-                            namespace_name: namespace.clone(),
-                            namespace_key: format!("{}::{}", catalog_name, namespace),
-                            expanded: expanded_namespaces.read().contains(&format!("{}::{}", catalog_name, namespace)),
-                            namespace_tables: namespace_tables,
-                            loading_namespaces: loading_namespaces,
-                            on_toggle_namespace: on_toggle_namespace,
-                            on_table_selected: on_table_selected
+                    for namespace_name in namespaces_to_render.iter() {
+                        {
+                            let filtered_ns_data = filtered_namespaces
+                                .as_ref()
+                                .and_then(|filtered| filtered.iter().find(|fn_node| &fn_node.namespace_name == namespace_name));
+
+                            let namespace_key = format!("{}::{}", catalog_name, namespace_name);
+                            let should_expand = expanded_namespaces.read().contains(&namespace_key)
+                                || filtered_ns_data.map(|ns| ns.force_expand_namespace).unwrap_or(false);
+
+                            rsx! {
+                                NamespaceTreeNode {
+                                    catalog_name: catalog_name.clone(),
+                                    namespace_name: namespace_name.clone(),
+                                    namespace_key: namespace_key.clone(),
+                                    expanded: should_expand,
+                                    filtered_tables: filtered_ns_data.map(|ns| ns.filtered_tables.clone()),
+                                    namespace_tables: namespace_tables,
+                                    loading_namespaces: loading_namespaces,
+                                    on_toggle_namespace: on_toggle_namespace,
+                                    on_table_selected: on_table_selected
+                                }
+                            }
                         }
                     }
                 }
@@ -1155,17 +1414,24 @@ fn NamespaceTreeNode(
     namespace_name: String,
     namespace_key: String,
     expanded: bool,
+    filtered_tables: Option<Vec<catalog::TableReference>>, // New parameter
     namespace_tables: Signal<std::collections::HashMap<String, Vec<catalog::TableReference>>>,
     loading_namespaces: Signal<std::collections::HashSet<String>>,
     on_toggle_namespace: EventHandler<String>,
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
     let is_loading = loading_namespaces.read().contains(&namespace_key);
-    let tables = namespace_tables
-        .read()
-        .get(&namespace_key)
-        .cloned()
-        .unwrap_or_default();
+
+    // Use filtered tables if provided, otherwise use normal logic
+    let tables_to_render = if let Some(filtered) = &filtered_tables {
+        filtered.clone()
+    } else {
+        namespace_tables
+            .read()
+            .get(&namespace_key)
+            .cloned()
+            .unwrap_or_default()
+    };
 
     rsx! {
         div {
@@ -1213,13 +1479,13 @@ fn NamespaceTreeNode(
             if expanded && !is_loading {
                 div {
                     class: "ml-4 mt-1 space-y-1",
-                    if tables.is_empty() {
+                    if tables_to_render.is_empty() {
                         div {
                             class: "px-2 py-1 text-xs text-gray-500 italic",
                             "No tables found"
                         }
                     } else {
-                        for table in tables.iter() {
+                        for table in tables_to_render.iter() {
                             div {
                                 class: format!("flex items-center px-2 py-1 rounded transition-colors {}",
                                     if table.table_type == catalog::TableType::Iceberg {
