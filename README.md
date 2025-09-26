@@ -7,12 +7,12 @@ Built with Rust and Dioxus for performance and cross-platform compatibility.
 
 ## Features
 
-- **🔗 Multiple Catalog Support**: Connect to REST and AWS Glue catalogs
-- **📋 Schema Visualization**: Explore table schemas with nested field support
-- **🔄 Schema Evolution**: Compare schema changes across versions
-- **🧩 Partition Management**: View partition specifications and transform functions
-- **📈 Snapshot Timeline**: Track table history with detailed operation information
-- **🚀 Cross-Platform**: Native binaries for Linux, macOS, and Windows
+- **Multiple Catalog Support**: Connect to REST and AWS Glue catalogs
+- **Schema Visualization**: Explore table schemas with nested field support
+- **Schema Evolution**: Compare schema changes across versions
+- **Partition Management**: View partition specifications and transform functions
+- **Snapshot Timeline**: Track table history with detailed operation information
+- **Cross-Platform**: Native binaries for Linux, macOS, and Windows
 
 ## Screenshots
 
