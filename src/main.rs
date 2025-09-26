@@ -67,6 +67,7 @@ fn App() -> Element {
     let expanded_catalogs = use_signal(std::collections::HashSet::<String>::new);
     let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
+
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
         log::info!("Loading table: {} from namespace: {} in catalog: {}", table_name, namespace, catalog_name);
         spawn(async move {
@@ -148,14 +149,32 @@ fn App() -> Element {
     rsx! {
         div {
             class: "min-h-screen bg-gray-100",
-            tabindex: "0", // Make div focusable for keyboard events
+            // Make the entire app container focusable and auto-focus it
+            tabindex: "0",
+            autofocus: true,
+            outline: "none", // Remove focus outline
             onkeydown: move |event| {
                 // Handle CTRL+K to open global search (only when connected)
-                let key_str = format!("{:?}", event.key());
-                if event.modifiers().ctrl() && key_str.contains("\"k\"") && matches!(app_state(), AppState::Connected) {
+                let key = event.key();
+
+                // Debug: log the key event
+                log::info!("Key pressed: {:?}, modifiers: ctrl={}, shift={}, alt={}",
+                    key, event.modifiers().ctrl(), event.modifiers().shift(), event.modifiers().alt());
+
+                // Check for Ctrl+K combination
+                let is_k_key = matches!(key, dioxus::prelude::Key::Character(ref s) if s.to_lowercase() == "k");
+
+                if event.modifiers().ctrl() && is_k_key && matches!(app_state(), AppState::Connected) {
+                    log::info!("Ctrl+K detected! Opening search modal");
+                    event.prevent_default();
                     show_global_search.set(true);
                     global_search_query.set(String::new());
                 }
+            },
+            // Ensure the div stays focused
+            onclick: move |_| {
+                // Re-focus the div when clicked to ensure keyboard events continue working
+                log::info!("App container clicked, maintaining focus");
             },
 
             // Loading overlay
@@ -289,6 +308,15 @@ fn App() -> Element {
                                                 class: "text-3xl font-bold text-gray-900",
                                                 "🧊 Hielo"
                                             }
+                                        }
+                                        // Debug: Add a test button to open search (can be removed later)
+                                        button {
+                                            onclick: move |_| {
+                                                show_global_search.set(true);
+                                                global_search_query.set(String::new());
+                                            },
+                                            class: "px-3 py-1 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700",
+                                            "🔍 Search (Ctrl+K)"
                                         }
                                     }
                                 }
@@ -499,6 +527,12 @@ fn App() -> Element {
             
             .timeline-item:last-child::after {{
                 display: none;
+            }}
+
+            /* Remove focus outline from main app container */
+            div[tabindex='0'] {{
+                outline: none !important;
+                border: none;
             }}
             "
         }
