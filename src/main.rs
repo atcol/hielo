@@ -68,7 +68,12 @@ fn App() -> Element {
     let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
-        log::info!("Loading table: {} from namespace: {} in catalog: {}", table_name, namespace, catalog_name);
+        log::info!(
+            "Loading table: {} from namespace: {} in catalog: {}",
+            table_name,
+            namespace,
+            catalog_name
+        );
         spawn(async move {
             loading_table.set(true);
             error_message.set(None);
@@ -256,7 +261,7 @@ fn App() -> Element {
                     // Layout with sidebar and main content
                     div {
                         class: "flex h-screen bg-gray-100",
-                        
+
                         // Left Navigation Pane
                         LeftNavigationPane {
                             collapsed: nav_pane_collapsed(),
@@ -271,11 +276,11 @@ fn App() -> Element {
                             on_table_selected: load_table,
                             on_add_catalog: move |_| app_state.set(AppState::CatalogConnection)
                         }
-                        
+
                         // Main Content Area
                         div {
                             class: "flex-1 flex flex-col bg-white",
-                            
+
                             // Header
                             header {
                                 class: "bg-white shadow-sm border-b flex-shrink-0",
@@ -293,11 +298,11 @@ fn App() -> Element {
                                     }
                                 }
                             }
-                            
+
                             // Main content
                             main {
                                 class: "flex-1 flex flex-col overflow-hidden",
-                                
+
                                 // Tab bar
                                 if open_tabs.read().len() > 1 {
                                     div {
@@ -322,7 +327,7 @@ fn App() -> Element {
                                         }
                                     }
                                 }
-                                
+
                                 // Tab content
                                 div {
                                     class: "flex-1 overflow-y-auto",
@@ -354,56 +359,102 @@ fn App() -> Element {
                                             AppTab::Table { table, .. } => rsx! {
                                                 div {
                                                     class: "h-full flex flex-col",
-                                                    
+
                                                     // Table sub-tabs
                                                     div {
-                                                        class: "flex border-b border-gray-200 bg-gray-50 px-6",
-                                                        button {
-                                                            onclick: move |_| table_view_tab.set(TableViewTab::Overview),
-                                                            class: format!("px-4 py-2 text-sm font-medium {}",
-                                                                if matches!(table_view_tab(), TableViewTab::Overview) {
-                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
-                                                                } else {
-                                                                    "text-gray-500 hover:text-gray-700"
-                                                                }
-                                                            ),
-                                                            "Overview"
+                                                        class: "flex justify-between border-b border-gray-200 bg-gray-50 px-6",
+                                                        div {
+                                                            class: "flex",
+                                                            button {
+                                                                onclick: move |_| table_view_tab.set(TableViewTab::Overview),
+                                                                class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                    if matches!(table_view_tab(), TableViewTab::Overview) {
+                                                                        "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                    } else {
+                                                                        "text-gray-500 hover:text-gray-700"
+                                                                    }
+                                                                ),
+                                                                "Overview"
+                                                            }
+                                                            button {
+                                                                onclick: move |_| table_view_tab.set(TableViewTab::Schema),
+                                                                class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                    if matches!(table_view_tab(), TableViewTab::Schema) {
+                                                                        "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                    } else {
+                                                                        "text-gray-500 hover:text-gray-700"
+                                                                    }
+                                                                ),
+                                                                "Schema"
+                                                            }
+                                                            button {
+                                                                onclick: move |_| table_view_tab.set(TableViewTab::Partitions),
+                                                                class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                    if matches!(table_view_tab(), TableViewTab::Partitions) {
+                                                                        "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                    } else {
+                                                                        "text-gray-500 hover:text-gray-700"
+                                                                    }
+                                                                ),
+                                                                "Partitions"
+                                                            }
+                                                            button {
+                                                                onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
+                                                                class: format!("px-4 py-2 text-sm font-medium {}",
+                                                                    if matches!(table_view_tab(), TableViewTab::SnapshotHistory) {
+                                                                        "text-blue-600 border-b-2 border-blue-600 bg-white"
+                                                                    } else {
+                                                                        "text-gray-500 hover:text-gray-700"
+                                                                    }
+                                                                ),
+                                                                "Snapshots"
+                                                            }
                                                         }
-                                                        button {
-                                                            onclick: move |_| table_view_tab.set(TableViewTab::Schema),
-                                                            class: format!("px-4 py-2 text-sm font-medium {}",
-                                                                if matches!(table_view_tab(), TableViewTab::Schema) {
-                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
+
+                                                        // Refresh button
+                                                        div {
+                                                            class: "flex items-center",
+                                                            button {
+                                                                onclick: {
+                                                                    let table_clone = table.clone();
+                                                                    move |_| {
+                                                                        log::info!("Refreshing table: {}.{}", table_clone.namespace, table_clone.name);
+                                                                        load_table((table_clone.catalog_name.clone(), table_clone.namespace.clone(), table_clone.name.clone()));
+                                                                    }
+                                                                },
+                                                                disabled: loading_table(),
+                                                                class: format!("flex items-center px-3 py-2 text-sm font-medium rounded-md {}",
+                                                                    if loading_table() {
+                                                                        "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                                                    } else {
+                                                                        "bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                                                    }
+                                                                ),
+                                                                title: "Refresh table data",
+
+                                                                if loading_table() {
+                                                                    div {
+                                                                        class: "animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400 mr-2"
+                                                                    }
                                                                 } else {
-                                                                    "text-gray-500 hover:text-gray-700"
+                                                                    svg {
+                                                                        class: "h-4 w-4 mr-2",
+                                                                        fill: "none",
+                                                                        stroke: "currentColor",
+                                                                        view_box: "0 0 24 24",
+                                                                        path {
+                                                                            stroke_linecap: "round",
+                                                                            stroke_linejoin: "round",
+                                                                            stroke_width: "2",
+                                                                            d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                                                                        }
+                                                                    }
                                                                 }
-                                                            ),
-                                                            "Schema"
-                                                        }
-                                                        button {
-                                                            onclick: move |_| table_view_tab.set(TableViewTab::Partitions),
-                                                            class: format!("px-4 py-2 text-sm font-medium {}",
-                                                                if matches!(table_view_tab(), TableViewTab::Partitions) {
-                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
-                                                                } else {
-                                                                    "text-gray-500 hover:text-gray-700"
-                                                                }
-                                                            ),
-                                                            "Partitions"
-                                                        }
-                                                        button {
-                                                            onclick: move |_| table_view_tab.set(TableViewTab::SnapshotHistory),
-                                                            class: format!("px-4 py-2 text-sm font-medium {}",
-                                                                if matches!(table_view_tab(), TableViewTab::SnapshotHistory) {
-                                                                    "text-blue-600 border-b-2 border-blue-600 bg-white"
-                                                                } else {
-                                                                    "text-gray-500 hover:text-gray-700"
-                                                                }
-                                                            ),
-                                                            "Snapshots"
+                                                                "Refresh"
+                                                            }
                                                         }
                                                     }
-                                                    
+
                                                     // Table sub-tab content
                                                     div {
                                                         class: "flex-1 overflow-y-auto p-6",
@@ -437,7 +488,7 @@ fn App() -> Element {
                                 }
                             }
                         }
-                        
+
                         // Delete confirmation dialog
                         if show_delete_confirmation() {
                             DeleteConfirmationDialog {
@@ -753,26 +804,28 @@ fn LeftNavigationPane(
             // First, ensure the catalog is connected
             let catalog_config = {
                 let manager = catalog_manager.read();
-                manager.get_saved_catalogs()
+                manager
+                    .get_saved_catalogs()
                     .iter()
                     .find(|c| c.name == catalog_name)
                     .cloned()
             };
-            
+
             if let Some(config) = catalog_config {
                 // Try to connect the catalog if not already connected
-                let is_connected = catalog_manager.read()
+                let is_connected = catalog_manager
+                    .read()
                     .get_connections()
                     .iter()
                     .any(|conn| conn.config.name == catalog_name);
-                
+
                 if !is_connected {
                     log::info!("Catalog not connected, connecting: {}", catalog_name);
                     let connect_result = {
                         let mut manager_guard = catalog_manager.write();
                         manager_guard.connect_catalog(config).await
                     };
-                    
+
                     match connect_result {
                         Ok(_) => {
                             log::info!("Successfully connected to catalog: {}", catalog_name);
@@ -783,18 +836,26 @@ fn LeftNavigationPane(
                         }
                     }
                 }
-                
+
                 // Now try to list namespaces
                 log::info!("Loading namespaces for connected catalog: {}", catalog_name);
                 match catalog_manager.read().list_namespaces(&catalog_name).await {
                     Ok(ns_list) => {
-                        log::info!("Loaded {} namespaces for catalog {}", ns_list.len(), catalog_name);
+                        log::info!(
+                            "Loaded {} namespaces for catalog {}",
+                            ns_list.len(),
+                            catalog_name
+                        );
                         catalog_namespaces.with_mut(|namespaces| {
                             namespaces.insert(catalog_name.clone(), ns_list);
                         });
                     }
                     Err(e) => {
-                        log::error!("Failed to load namespaces for catalog {}: {}", catalog_name, e);
+                        log::error!(
+                            "Failed to load namespaces for catalog {}: {}",
+                            catalog_name,
+                            e
+                        );
                     }
                 }
             } else {
@@ -806,7 +867,7 @@ fn LeftNavigationPane(
     let mut toggle_catalog_expansion = move |catalog_name: String| {
         log::info!("Toggling catalog expansion for: {}", catalog_name);
         let should_expand = !expanded_catalogs.read().contains(&catalog_name);
-        
+
         expanded_catalogs.with_mut(|expanded| {
             if expanded.contains(&catalog_name) {
                 log::info!("Collapsing catalog: {}", catalog_name);
@@ -816,7 +877,7 @@ fn LeftNavigationPane(
                 expanded.insert(catalog_name.clone());
             }
         });
-        
+
         // If expanding, also trigger namespace loading
         if should_expand {
             load_catalog_namespaces(catalog_name);
@@ -830,7 +891,7 @@ fn LeftNavigationPane(
             let namespace_name = namespace_parts[1];
 
             let should_expand = !expanded_namespaces.read().contains(&namespace_key);
-            
+
             expanded_namespaces.with_mut(|expanded| {
                 if expanded.contains(&namespace_key) {
                     expanded.remove(&namespace_key);
@@ -838,9 +899,8 @@ fn LeftNavigationPane(
                     expanded.insert(namespace_key.clone());
                 }
             });
-            
-            if should_expand {
 
+            if should_expand {
                 // Load tables for this namespace
                 let catalog_name = catalog_name.to_string();
                 let namespace_name = namespace_name.to_string();
@@ -978,8 +1038,12 @@ fn CatalogTreeNode(
     on_table_selected: EventHandler<(String, String, String)>,
 ) -> Element {
     // Get namespaces for this catalog from the shared state
-    let namespaces = catalog_namespaces.read().get(&catalog_name).cloned().unwrap_or_default();
-    
+    let namespaces = catalog_namespaces
+        .read()
+        .get(&catalog_name)
+        .cloned()
+        .unwrap_or_default();
+
     // Simple loading check: if expanded but no namespaces loaded yet
     let loading_catalog = expanded && namespaces.is_empty();
 

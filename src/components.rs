@@ -1,5 +1,225 @@
-use crate::data::{DataType, IcebergTable, NestedField, PartitionField};
+use crate::data::{DataType, IcebergTable, NestedField, PartitionField, Snapshot};
 use dioxus::prelude::*;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SnapshotFilters {
+    pub operation_types: Vec<String>, // Selected operation types
+    pub files_added_min: Option<u32>,
+    pub files_added_max: Option<u32>,
+    pub records_added_min: Option<u64>,
+    pub records_added_max: Option<u64>,
+    pub date_start: Option<String>, // ISO date string
+    pub date_end: Option<String>,   // ISO date string
+}
+
+impl Default for SnapshotFilters {
+    fn default() -> Self {
+        Self {
+            operation_types: vec![
+                "append".to_string(),
+                "overwrite".to_string(),
+                "delete".to_string(),
+            ],
+            files_added_min: None,
+            files_added_max: None,
+            records_added_min: None,
+            records_added_max: None,
+            date_start: None,
+            date_end: None,
+        }
+    }
+}
+
+#[component]
+fn OperationTypeFilter(
+    selected_types: Vec<String>,
+    on_change: EventHandler<Vec<String>>,
+) -> Element {
+    let mut is_open = use_signal(|| false);
+    let available_operations = vec![
+        ("append", "Append", "bg-green-100 text-green-800"),
+        ("overwrite", "Overwrite", "bg-yellow-100 text-yellow-800"),
+        ("delete", "Delete", "bg-red-100 text-red-800"),
+    ];
+
+    let selected_types_clone = selected_types.clone();
+    let button_text = if selected_types.is_empty() {
+        "None selected".to_string()
+    } else {
+        format!("{} selected", selected_types.len())
+    };
+
+    rsx! {
+        div {
+            class: "relative",
+            label {
+                class: "block text-sm font-medium text-gray-700 mb-1",
+                "Operation Type"
+            }
+            button {
+                onclick: move |_| is_open.set(!is_open()),
+                class: "w-full bg-white border border-gray-300 rounded-md px-3 py-2 text-left shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500",
+                "{button_text}"
+                svg {
+                    class: "ml-2 h-5 w-5 text-gray-400 absolute right-2 top-1/2 transform -translate-y-1/2",
+                    fill: "none",
+                    stroke: "currentColor",
+                    view_box: "0 0 24 24",
+                    path {
+                        stroke_linecap: "round",
+                        stroke_linejoin: "round",
+                        stroke_width: "2",
+                        d: "M19 9l-7 7-7-7"
+                    }
+                }
+            }
+            if is_open() {
+                div {
+                    class: "absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 ring-1 ring-black ring-opacity-5",
+                    for (op_value, op_name, op_class) in available_operations {
+                        label {
+                            class: "flex items-center px-3 py-2 hover:bg-gray-100 cursor-pointer",
+                            input {
+                                r#type: "checkbox",
+                                checked: selected_types_clone.contains(&op_value.to_string()),
+                                onchange: {
+                                    let op_val = op_value.to_string();
+                                    let types_for_closure = selected_types_clone.clone();
+                                    move |evt: Event<FormData>| {
+                                        let mut new_types = types_for_closure.clone();
+                                        if evt.checked() {
+                                            if !new_types.contains(&op_val) {
+                                                new_types.push(op_val.clone());
+                                            }
+                                        } else {
+                                            new_types.retain(|t| t != &op_val);
+                                        }
+                                        on_change.call(new_types);
+                                    }
+                                },
+                                class: "mr-2"
+                            }
+                            span {
+                                class: format!("px-2 py-1 rounded-full text-xs font-medium {}", op_class),
+                                "{op_name}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn NumberRangeFilter(
+    label: String,
+    min_value: Option<u64>,
+    max_value: Option<u64>,
+    on_min_change: EventHandler<Option<u64>>,
+    on_max_change: EventHandler<Option<u64>>,
+    placeholder_min: String,
+    placeholder_max: String,
+) -> Element {
+    rsx! {
+        div {
+            label {
+                class: "block text-sm font-medium text-gray-700 mb-1",
+                "{label}"
+            }
+            div {
+                class: "flex space-x-2",
+                input {
+                    r#type: "number",
+                    value: "{min_value.map(|v| v.to_string()).unwrap_or_default()}",
+                    oninput: move |evt| {
+                        let val = if evt.value().is_empty() {
+                            None
+                        } else {
+                            evt.value().parse::<u64>().ok()
+                        };
+                        on_min_change.call(val);
+                    },
+                    placeholder: "{placeholder_min}",
+                    class: "flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                }
+                span {
+                    class: "self-center text-gray-500 text-sm",
+                    "to"
+                }
+                input {
+                    r#type: "number",
+                    value: "{max_value.map(|v| v.to_string()).unwrap_or_default()}",
+                    oninput: move |evt| {
+                        let val = if evt.value().is_empty() {
+                            None
+                        } else {
+                            evt.value().parse::<u64>().ok()
+                        };
+                        on_max_change.call(val);
+                    },
+                    placeholder: "{placeholder_max}",
+                    class: "flex-1 border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn DateRangeFilter(
+    start_date: Option<String>,
+    end_date: Option<String>,
+    on_start_change: EventHandler<Option<String>>,
+    on_end_change: EventHandler<Option<String>>,
+) -> Element {
+    let start_date_value = start_date.clone().unwrap_or_default();
+    let end_date_value = end_date.clone().unwrap_or_default();
+
+    rsx! {
+        div {
+            label {
+                class: "block text-sm font-medium text-gray-700 mb-1",
+                "Date Range"
+            }
+            div {
+                class: "flex space-x-2",
+                div {
+                    class: "flex-1",
+                    input {
+                        r#type: "date",
+                        value: "{start_date_value}",
+                        oninput: move |evt| {
+                            let val = if evt.value().is_empty() {
+                                None
+                            } else {
+                                Some(evt.value())
+                            };
+                            on_start_change.call(val);
+                        },
+                        class: "w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    }
+                }
+                div {
+                    class: "flex-1",
+                    input {
+                        r#type: "date",
+                        value: "{end_date_value}",
+                        oninput: move |evt| {
+                            let val = if evt.value().is_empty() {
+                                None
+                            } else {
+                                Some(evt.value())
+                            };
+                            on_end_change.call(val);
+                        },
+                        class: "w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[component]
 pub fn TableOverviewTab(table: IcebergTable) -> Element {
@@ -444,14 +664,308 @@ pub fn SchemaFieldRow(field: NestedField, depth: usize) -> Element {
     }
 }
 
+fn is_filtered(filters: &SnapshotFilters) -> bool {
+    filters.operation_types.len() < 3 || // Not all operation types selected
+    filters.files_added_min.is_some() ||
+    filters.files_added_max.is_some() ||
+    filters.records_added_min.is_some() ||
+    filters.records_added_max.is_some() ||
+    filters.date_start.is_some() ||
+    filters.date_end.is_some()
+}
+
+fn get_active_filter_count(filters: &SnapshotFilters) -> usize {
+    let mut count = 0;
+    if filters.operation_types.len() < 3 {
+        count += 1;
+    }
+    if filters.files_added_min.is_some() || filters.files_added_max.is_some() {
+        count += 1;
+    }
+    if filters.records_added_min.is_some() || filters.records_added_max.is_some() {
+        count += 1;
+    }
+    if filters.date_start.is_some() || filters.date_end.is_some() {
+        count += 1;
+    }
+    count
+}
+
+fn apply_snapshot_filters(snapshots: &[Snapshot], filters: &SnapshotFilters) -> Vec<Snapshot> {
+    snapshots
+        .iter()
+        .filter(|snapshot| {
+            // Filter by operation type
+            if !filters.operation_types.is_empty() {
+                let operation = snapshot.operation();
+                if !filters.operation_types.contains(&operation) {
+                    return false;
+                }
+            }
+
+            // Filter by files added range
+            if let (Some(min_files), Some(summary)) = (filters.files_added_min, &snapshot.summary) {
+                if let Some(added_files_str) = &summary.added_data_files {
+                    if let Ok(added_files) = added_files_str.parse::<u32>() {
+                        if added_files < min_files {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if let (Some(max_files), Some(summary)) = (filters.files_added_max, &snapshot.summary) {
+                if let Some(added_files_str) = &summary.added_data_files {
+                    if let Ok(added_files) = added_files_str.parse::<u32>() {
+                        if added_files > max_files {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            // Filter by records added range
+            if let (Some(min_records), Some(summary)) =
+                (filters.records_added_min, &snapshot.summary)
+            {
+                if let Some(added_records_str) = &summary.added_records {
+                    if let Ok(added_records) = added_records_str.parse::<u64>() {
+                        if added_records < min_records {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if let (Some(max_records), Some(summary)) =
+                (filters.records_added_max, &snapshot.summary)
+            {
+                if let Some(added_records_str) = &summary.added_records {
+                    if let Ok(added_records) = added_records_str.parse::<u64>() {
+                        if added_records > max_records {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            // Filter by date range
+            if let Some(start_date) = &filters.date_start {
+                if let Ok(start_timestamp) =
+                    chrono::NaiveDate::parse_from_str(start_date, "%Y-%m-%d")
+                {
+                    let start_datetime = start_timestamp
+                        .and_hms_opt(0, 0, 0)
+                        .unwrap()
+                        .and_utc()
+                        .timestamp_millis();
+                    if snapshot.timestamp_ms < start_datetime {
+                        return false;
+                    }
+                }
+            }
+            if let Some(end_date) = &filters.date_end {
+                if let Ok(end_timestamp) = chrono::NaiveDate::parse_from_str(end_date, "%Y-%m-%d") {
+                    let end_datetime = end_timestamp
+                        .and_hms_opt(23, 59, 59)
+                        .unwrap()
+                        .and_utc()
+                        .timestamp_millis();
+                    if snapshot.timestamp_ms > end_datetime {
+                        return false;
+                    }
+                }
+            }
+
+            true
+        })
+        .cloned()
+        .collect()
+}
+
 #[component]
 pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
+    let mut filters = use_signal(SnapshotFilters::default);
+    let mut show_filters = use_signal(|| false);
+
+    // Existing snapshot processing logic...
     let mut sorted_snapshots = table.snapshots.clone();
-    sorted_snapshots.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms)); // Most recent first
+    sorted_snapshots.sort_by(|a, b| b.timestamp_ms.cmp(&a.timestamp_ms));
+
+    // Apply filters to snapshots
+    let filtered_snapshots = apply_snapshot_filters(&sorted_snapshots, &filters());
 
     rsx! {
         div {
             class: "space-y-6",
+
+            // Filter Panel Header with Toggle
+            div {
+                class: "flex items-center justify-between",
+                h3 {
+                    class: "text-lg leading-6 font-medium text-gray-900",
+                    "Snapshot History"
+                }
+                button {
+                    onclick: move |_| show_filters.set(!show_filters()),
+                    class: format!("flex items-center px-3 py-2 text-sm font-medium border rounded-md hover:bg-gray-50 relative {}",
+                        if is_filtered(&filters()) {
+                            "text-blue-700 border-blue-300 bg-blue-50"
+                        } else {
+                            "text-gray-600 border-gray-300 hover:text-gray-900"
+                        }
+                    ),
+                    svg {
+                        class: format!("h-4 w-4 mr-2 transform transition-transform {}",
+                            if show_filters() { "rotate-180" } else { "" }
+                        ),
+                        fill: "none",
+                        stroke: "currentColor",
+                        view_box: "0 0 24 24",
+                        path {
+                            stroke_linecap: "round",
+                            stroke_linejoin: "round",
+                            stroke_width: "2",
+                            d: "M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                        }
+                    }
+                    "Filters"
+
+                    // Active filter count badge
+                    if is_filtered(&filters()) {
+                        span {
+                            class: "absolute -top-2 -right-2 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white bg-red-600 rounded-full",
+                            "{get_active_filter_count(&filters())}"
+                        }
+                    }
+                }
+            }
+
+            // Collapsible Filter Panel
+            if show_filters() {
+                div {
+                    class: "bg-gray-50 border border-gray-200 rounded-lg p-4",
+
+                    // Quick Filters and Clear All
+                    div {
+                        class: "flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-gray-200",
+                        span {
+                            class: "text-sm font-medium text-gray-700 mr-2",
+                            "Quick filters:"
+                        }
+
+                        // Last 7 days
+                        button {
+                            onclick: move |_| {
+                                let now = chrono::Utc::now();
+                                let seven_days_ago = now - chrono::Duration::days(7);
+                                filters.with_mut(|f| {
+                                    f.date_start = Some(seven_days_ago.format("%Y-%m-%d").to_string());
+                                    f.date_end = Some(now.format("%Y-%m-%d").to_string());
+                                });
+                            },
+                            class: "px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200",
+                            "Last 7 days"
+                        }
+
+                        // Last 30 days
+                        button {
+                            onclick: move |_| {
+                                let now = chrono::Utc::now();
+                                let thirty_days_ago = now - chrono::Duration::days(30);
+                                filters.with_mut(|f| {
+                                    f.date_start = Some(thirty_days_ago.format("%Y-%m-%d").to_string());
+                                    f.date_end = Some(now.format("%Y-%m-%d").to_string());
+                                });
+                            },
+                            class: "px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 border border-blue-300 rounded-md hover:bg-blue-200",
+                            "Last 30 days"
+                        }
+
+                        // All time
+                        button {
+                            onclick: move |_| {
+                                filters.with_mut(|f| {
+                                    f.date_start = None;
+                                    f.date_end = None;
+                                });
+                            },
+                            class: "px-3 py-1 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200",
+                            "All time"
+                        }
+
+                        div { class: "flex-1" } // Spacer
+
+                        // Clear all button
+                        button {
+                            onclick: move |_| {
+                                filters.set(SnapshotFilters::default());
+                            },
+                            disabled: !is_filtered(&filters()),
+                            class: format!("px-3 py-1 text-xs font-medium border rounded-md {}",
+                                if is_filtered(&filters()) {
+                                    "text-red-700 bg-red-100 border-red-300 hover:bg-red-200"
+                                } else {
+                                    "text-gray-400 bg-gray-100 border-gray-300 cursor-not-allowed"
+                                }
+                            ),
+                            "Clear all"
+                        }
+                    }
+
+                    div {
+                        class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4",
+
+                        // Operation Type Filter
+                        OperationTypeFilter {
+                            selected_types: filters().operation_types,
+                            on_change: move |types| {
+                                filters.with_mut(|f| f.operation_types = types);
+                            }
+                        }
+
+                        // Files Added Range
+                        NumberRangeFilter {
+                            label: "Files Added".to_string(),
+                            min_value: filters().files_added_min.map(|v| v as u64),
+                            max_value: filters().files_added_max.map(|v| v as u64),
+                            placeholder_min: "Min files".to_string(),
+                            placeholder_max: "Max files".to_string(),
+                            on_min_change: move |val: Option<u64>| {
+                                filters.with_mut(|f| f.files_added_min = val.map(|v| v as u32));
+                            },
+                            on_max_change: move |val: Option<u64>| {
+                                filters.with_mut(|f| f.files_added_max = val.map(|v| v as u32));
+                            }
+                        }
+
+                        // Records Added Range
+                        NumberRangeFilter {
+                            label: "Records Added".to_string(),
+                            min_value: filters().records_added_min,
+                            max_value: filters().records_added_max,
+                            placeholder_min: "Min records".to_string(),
+                            placeholder_max: "Max records".to_string(),
+                            on_min_change: move |val| {
+                                filters.with_mut(|f| f.records_added_min = val);
+                            },
+                            on_max_change: move |val| {
+                                filters.with_mut(|f| f.records_added_max = val);
+                            }
+                        }
+
+                        // Date Range Filter
+                        DateRangeFilter {
+                            start_date: filters().date_start,
+                            end_date: filters().date_end,
+                            on_start_change: move |val| {
+                                filters.with_mut(|f| f.date_start = val);
+                            },
+                            on_end_change: move |val| {
+                                filters.with_mut(|f| f.date_end = val);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Summary Statistics
             div {
@@ -468,11 +982,19 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                             class: "text-center",
                             dt {
                                 class: "text-sm font-medium text-gray-500",
-                                "Total Snapshots"
+                                if filtered_snapshots.len() != table.snapshots.len() {
+                                    "Filtered Snapshots"
+                                } else {
+                                    "Total Snapshots"
+                                }
                             }
                             dd {
                                 class: "mt-1 text-2xl font-semibold text-gray-900",
-                                "{table.snapshots.len()}"
+                                if filtered_snapshots.len() != table.snapshots.len() {
+                                    "{filtered_snapshots.len()} of {table.snapshots.len()}"
+                                } else {
+                                    "{filtered_snapshots.len()}"
+                                }
                             }
                         }
                         div {
@@ -485,7 +1007,7 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                                 class: "mt-1 text-sm text-gray-900",
                                 {
                                     let mut ops = std::collections::HashMap::new();
-                                    for snapshot in &table.snapshots {
+                                    for snapshot in &filtered_snapshots {
                                         *ops.entry(snapshot.operation()).or_insert(0) += 1;
                                     }
                                     ops.iter()
@@ -505,8 +1027,8 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                                 class: "mt-1 text-sm text-gray-900",
                                 {
                                     if let (Some(oldest), Some(newest)) = (
-                                        table.snapshots.iter().min_by_key(|s| s.timestamp_ms),
-                                        table.snapshots.iter().max_by_key(|s| s.timestamp_ms),
+                                        filtered_snapshots.iter().min_by_key(|s| s.timestamp_ms),
+                                        filtered_snapshots.iter().max_by_key(|s| s.timestamp_ms),
                                     ) {
                                         let days = (newest.timestamp_ms - oldest.timestamp_ms) / (24 * 60 * 60 * 1000);
                                         format!("{} days", days)
@@ -533,12 +1055,42 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                         class: "text-sm text-gray-500 mb-6",
                         "Detailed history showing all table snapshots from most recent to oldest"
                     }
-                    div {
-                        class: "flow-root",
-                        ul {
-                            role: "list",
-                            class: "relative",
-                            for (index, snapshot) in sorted_snapshots.iter().enumerate() {
+                    if filtered_snapshots.is_empty() {
+                        // No results state
+                        div {
+                            class: "text-center py-12",
+                            svg {
+                                class: "mx-auto h-12 w-12 text-gray-400 mb-4",
+                                fill: "none",
+                                view_box: "0 0 24 24",
+                                stroke: "currentColor",
+                                path {
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    stroke_width: "2",
+                                    d: "M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                                }
+                            }
+                            h3 {
+                                class: "text-lg font-medium text-gray-900 mb-2",
+                                "No snapshots found"
+                            }
+                            p {
+                                class: "text-sm text-gray-500",
+                                if is_filtered(&filters()) {
+                                    "No snapshots match your current filter criteria. Try adjusting your filters or use the \"Clear all\" button to see all snapshots."
+                                } else {
+                                    "This table has no snapshots to display."
+                                }
+                            }
+                        }
+                    } else {
+                        div {
+                            class: "flow-root",
+                            ul {
+                                role: "list",
+                                class: "relative",
+                                for (index, snapshot) in filtered_snapshots.iter().enumerate() {
                                 li {
                                     class: "timeline-item",
                                     div {
@@ -639,6 +1191,7 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                                             }
                                         }
                                     }
+                                }
                                 }
                             }
                         }
