@@ -1,0 +1,19 @@
+{
+  "name": "hielo-ui-tests",
+  "version": "1.0.0",
+  "description": "UI tests for Hielo desktop application",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headless": "./scripts/run-with-xvfb.sh playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
