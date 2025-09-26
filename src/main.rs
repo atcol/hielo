@@ -67,6 +67,9 @@ fn App() -> Element {
     let expanded_catalogs = use_signal(std::collections::HashSet::<String>::new);
     let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
+    // Global cache for search results to avoid reloading every time
+    let cached_search_results = use_signal(|| Option::<(String, Vec<catalog::TableReference>)>::None);
+
 
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
         log::info!("Loading table: {} from namespace: {} in catalog: {}", table_name, namespace, catalog_name);
@@ -253,6 +256,7 @@ fn App() -> Element {
                 GlobalSearchModal {
                     catalog_manager: catalog_manager,
                     search_query: global_search_query(),
+                    cached_results: cached_search_results,
                     on_search_change: move |query: String| global_search_query.set(query),
                     on_table_selected: load_table,
                     on_close: move |_| {
@@ -543,6 +547,7 @@ fn App() -> Element {
 fn GlobalSearchModal(
     catalog_manager: Signal<CatalogManager>,
     search_query: String,
+    cached_results: Signal<Option<(String, Vec<catalog::TableReference>)>>,
     on_search_change: EventHandler<String>,
     on_table_selected: EventHandler<(String, String, String)>,
     on_close: EventHandler<()>,
@@ -550,31 +555,56 @@ fn GlobalSearchModal(
     let mut all_tables = use_signal(Vec::<catalog::TableReference>::new);
     let mut loading = use_signal(|| false);
     let mut error_message = use_signal(|| Option::<String>::None);
+    let mut namespaces_loaded = use_signal(|| 0usize);
+    let mut total_namespaces = use_signal(|| 0usize);
 
-    // Load all tables from all namespaces when modal opens
+    // Load all tables from all namespaces when modal opens - OPTIMIZED VERSION WITH CACHING
     use_effect(move || {
         spawn(async move {
-            loading.set(true);
-            error_message.set(None);
-
             let connections = catalog_manager.read().get_connections().to_vec();
             if let Some(connection) = connections.first() {
                 let catalog_name = connection.config.name.clone();
 
+                // Check if we have cached results for this catalog
+                if let Some((cached_catalog, cached_tables)) = cached_results.read().clone() {
+                    if cached_catalog == catalog_name {
+                        log::info!("Using cached search results for catalog '{}' ({} tables)", catalog_name, cached_tables.len());
+                        all_tables.set(cached_tables);
+                        return; // Exit early, no need to reload
+                    }
+                }
+
+                // No cache or different catalog, load fresh data
+                log::info!("Loading fresh search results for catalog '{}'", catalog_name);
+                loading.set(true);
+                error_message.set(None);
+                all_tables.set(Vec::new()); // Clear previous results
+                namespaces_loaded.set(0);
+
                 match catalog_manager.read().list_namespaces(&catalog_name).await {
                     Ok(namespaces) => {
-                        let mut tables = Vec::new();
+                        total_namespaces.set(namespaces.len());
+                        log::info!("Loading tables from {} namespaces in parallel", namespaces.len());
 
-                        for namespace in namespaces {
+                        // Load tables from all namespaces with progress updates
+                        let mut all_namespace_tables = Vec::new();
+
+                        for (idx, namespace) in namespaces.iter().enumerate() {
                             match catalog_manager
                                 .read()
-                                .list_tables(&catalog_name, &namespace)
+                                .list_tables(&catalog_name, namespace)
                                 .await
                             {
                                 Ok(namespace_tables) => {
-                                    tables.extend(namespace_tables);
+                                    log::info!("Loaded {} tables from namespace '{}'", namespace_tables.len(), namespace);
+                                    all_namespace_tables.extend(namespace_tables);
+
+                                    // Update progress incrementally for UI feedback
+                                    all_tables.set(all_namespace_tables.clone());
+                                    namespaces_loaded.set(idx + 1);
                                 }
                                 Err(e) => {
+                                    log::error!("Failed to load tables from namespace '{}': {}", namespace, e);
                                     error_message.set(Some(format!(
                                         "Failed to load tables from namespace '{}': {}",
                                         namespace, e
@@ -583,17 +613,20 @@ fn GlobalSearchModal(
                             }
                         }
 
-                        all_tables.set(tables);
+                        log::info!("Finished loading all tables. Total: {}", all_namespace_tables.len());
+
+                        // Cache the results for future use
+                        cached_results.set(Some((catalog_name.clone(), all_namespace_tables.clone())));
+                        log::info!("Cached {} tables for catalog '{}'", all_namespace_tables.len(), catalog_name);
                     }
                     Err(e) => {
                         error_message.set(Some(format!("Failed to load namespaces: {}", e)));
                     }
                 }
+                loading.set(false);
             } else {
                 error_message.set(Some("No catalog connection found".to_string()));
             }
-
-            loading.set(false);
         });
     });
 
@@ -660,11 +693,53 @@ fn GlobalSearchModal(
                 // Results
                 div {
                     class: "flex-1 overflow-y-auto",
-                    if loading() {
+                    if loading() && total_namespaces() == 0 {
+                        // Initial loading state
                         div {
-                            class: "flex items-center justify-center py-8",
+                            class: "flex flex-col items-center justify-center py-8",
                             div {
-                                class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
+                                class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-3"
+                            }
+                            p {
+                                class: "text-sm text-gray-600",
+                                "Loading namespaces..."
+                            }
+                        }
+                    } else if loading() && total_namespaces() > 0 {
+                        // Progressive loading state
+                        div {
+                            class: "p-4",
+                            div {
+                                class: "flex items-center justify-between mb-3",
+                                div {
+                                    class: "flex items-center",
+                                    div {
+                                        class: "animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"
+                                    }
+                                    p {
+                                        class: "text-sm text-gray-700",
+                                        "Loading tables..."
+                                    }
+                                }
+                                p {
+                                    class: "text-sm text-gray-500",
+                                    "{namespaces_loaded()} / {total_namespaces()} namespaces"
+                                }
+                            }
+                            // Progress bar
+                            div {
+                                class: "w-full bg-gray-200 rounded-full h-2",
+                                div {
+                                    class: "bg-blue-600 h-2 rounded-full transition-all duration-300",
+                                    style: format!("width: {}%", if total_namespaces() > 0 { (namespaces_loaded() * 100) / total_namespaces() } else { 0 })
+                                }
+                            }
+                            // Show current results count while loading
+                            if !all_tables().is_empty() {
+                                p {
+                                    class: "text-xs text-gray-500 mt-2",
+                                    "{all_tables().len()} tables found so far..."
+                                }
                             }
                         }
                     } else if let Some(error) = error_message() {
@@ -754,10 +829,33 @@ fn GlobalSearchModal(
                 // Footer
                 div {
                     class: "p-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500",
-                    if !filtered_tables.is_empty() {
-                        "Showing {filtered_tables.len().min(10)} of {filtered_tables.len()} tables"
+                    if loading() {
+                        if total_namespaces() > 0 {
+                            "Loading tables from {namespaces_loaded()} / {total_namespaces()} namespaces... ({all_tables().len()} tables loaded)"
+                        } else {
+                            "Loading namespaces..."
+                        }
+                    } else if !filtered_tables.is_empty() {
+                        div {
+                            class: "flex justify-between items-center",
+                            span {
+                                "Showing {filtered_tables.len().min(10)} of {filtered_tables.len()} matching tables"
+                            }
+                            if filtered_tables.len() != all_tables().len() {
+                                span {
+                                    class: "text-gray-400",
+                                    "({all_tables().len()} total)"
+                                }
+                            }
+                        }
+                    } else if !loading() && all_tables().is_empty() {
+                        "No tables found in catalog"
                     } else {
-                        "Use Ctrl+K to open this search anytime"
+                        if query_clone.is_empty() {
+                            "Use Ctrl+K to open this search anytime • {all_tables().len()} tables available"
+                        } else {
+                            "No tables match \"{query_clone}\" • {all_tables().len()} total tables"
+                        }
                     }
                 }
             }
