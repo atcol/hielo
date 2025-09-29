@@ -37,6 +37,15 @@ enum TableViewTab {
 fn main() {
     dioxus_logger::init(tracing::Level::INFO).expect("failed to init logger");
 
+    // Enable WebView debugging in test environments
+    #[cfg(debug_assertions)]
+    if std::env::var("HIELO_ENABLE_DEVTOOLS").is_ok() {
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            std::env::set_var("WEBKIT_WEB_INSPECTOR_ENABLED", "1");
+        }
+    }
+
     LaunchBuilder::desktop()
         .with_cfg(dioxus::desktop::Config::new().with_window(
             dioxus::desktop::WindowBuilder::new().with_title("Hielo - Apache Iceberg Table Viewer"),

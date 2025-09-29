@@ -9,14 +9,22 @@ export async function getMainPage(): Promise<Page> {
     throw new Error('Browser not connected. Make sure global setup ran successfully.');
   }
 
+  if (!browser.isConnected()) {
+    throw new Error('Browser not available - using process-only testing mode');
+  }
+
   const contexts = browser.contexts();
   if (contexts.length === 0) {
-    throw new Error('No browser contexts found');
+    // Create a new context for testing
+    const context = await browser.newContext();
+    return await context.newPage();
   }
 
   const pages = contexts[0].pages();
   if (pages.length === 0) {
-    throw new Error('No pages found in browser context');
+    // Create a new page for testing if none exists
+    const context = contexts[0];
+    return await context.newPage();
   }
 
   return pages[0];

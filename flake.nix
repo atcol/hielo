@@ -57,6 +57,30 @@
 
           # For headless testing
           xorg.xorgserver
+
+          # Playwright browser dependencies
+          dbus
+          nss
+          nspr
+          at-spi2-atk
+          cups
+          libdrm
+          xorg.libXcomposite
+          xorg.libXdamage
+          xorg.libXrandr
+          xorg.libXScrnSaver
+          xorg.libXtst
+          xorg.libXext
+          xorg.libXfixes
+          libxkbcommon
+          mesa
+          udev
+          expat
+          # Additional Playwright requirements
+          pango
+          cairo
+          gdk-pixbuf
+          atk
         ] ++ lib.optionals stdenv.isDarwin [
           # macOS-specific dependencies
           darwin.apple_sdk.frameworks.WebKit
