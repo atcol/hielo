@@ -67,6 +67,26 @@ fn App() -> Element {
     let expanded_catalogs = use_signal(std::collections::HashSet::<String>::new);
     let expanded_namespaces = use_signal(std::collections::HashSet::<String>::new);
 
+    let mut close_tab = {
+        let mut open_tabs = open_tabs.clone();
+        let mut active_tab_index = active_tab_index.clone();
+        move |index: usize| {
+            let mut tabs = open_tabs.write();
+            if index < tabs.len() && index != 0 {
+                // Don't close the catalog tab (index 0)
+                tabs.remove(index);
+
+                // Adjust active tab index if necessary
+                let current_active = active_tab_index();
+                if current_active >= tabs.len() {
+                    active_tab_index.set(tabs.len() - 1);
+                } else if current_active > index {
+                    active_tab_index.set(current_active - 1);
+                }
+            }
+        }
+    };
+
     let load_table = move |(catalog_name, namespace, table_name): (String, String, String)| {
         log::info!(
             "Loading table: {} from namespace: {} in catalog: {}",
@@ -308,19 +328,33 @@ fn App() -> Element {
                                     div {
                                         class: "flex border-b border-gray-200 bg-gray-50",
                                         for (index, tab) in open_tabs.read().iter().enumerate() {
-                                            button {
-                                                onclick: move |_| active_tab_index.set(index),
-                                                class: format!("px-4 py-2 text-sm font-medium border-r border-gray-200 {}",
+                                            div {
+                                                class: format!("flex items-center border-r border-gray-200 {}",
                                                     if index == active_tab_index() {
                                                         "bg-white text-blue-600 border-b-2 border-blue-600"
                                                     } else {
                                                         "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                                                     }
                                                 ),
-                                                {
-                                                    match tab {
-                                                        AppTab::Catalog => "📁 Catalogs".to_string(),
-                                                        AppTab::Table { table, .. } => format!("📊 {}", table.name),
+                                                button {
+                                                    onclick: move |_| active_tab_index.set(index),
+                                                    class: "px-4 py-2 text-sm font-medium flex-1 text-left",
+                                                    {
+                                                        match tab {
+                                                            AppTab::Catalog => "📁 Catalogs".to_string(),
+                                                            AppTab::Table { table, .. } => format!("📊 {}", table.name),
+                                                        }
+                                                    }
+                                                }
+                                                if matches!(tab, AppTab::Table { .. }) {
+                                                    button {
+                                                        onclick: move |e| {
+                                                            e.stop_propagation();
+                                                            close_tab(index);
+                                                        },
+                                                        class: "px-2 py-1 hover:bg-gray-200 rounded-full mr-1 text-gray-400 hover:text-gray-600",
+                                                        title: "Close tab",
+                                                        "×"
                                                     }
                                                 }
                                             }
