@@ -183,3 +183,147 @@ impl Snapshot {
         }
     }
 }
+
+// Health Analytics Data Structures
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TableHealthMetrics {
+    pub health_score: f64,
+    pub file_health: FileHealthMetrics,
+    pub operational_health: OperationalHealthMetrics,
+    pub storage_efficiency: StorageEfficiencyMetrics,
+    pub trends: TrendMetrics,
+    pub alerts: Vec<HealthAlert>,
+    pub recommendations: Vec<MaintenanceRecommendation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FileHealthMetrics {
+    pub total_files: u64,
+    pub small_files_count: u64,
+    pub avg_file_size_mb: f64,
+    pub file_size_distribution: FileSizeDistribution,
+    pub files_per_partition_avg: f64,
+    pub small_file_ratio: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FileSizeDistribution {
+    pub tiny_files: u64,    // < 16MB
+    pub small_files: u64,   // 16MB - 64MB
+    pub optimal_files: u64, // 64MB - 512MB
+    pub large_files: u64,   // > 512MB
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OperationalHealthMetrics {
+    pub snapshot_frequency: SnapshotFrequencyMetrics,
+    pub operation_distribution: HashMap<String, u32>,
+    pub failed_operations: u32,
+    pub compaction_frequency: CompactionMetrics,
+    pub time_since_last_compaction_hours: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SnapshotFrequencyMetrics {
+    pub snapshots_last_hour: u32,
+    pub snapshots_last_day: u32,
+    pub snapshots_last_week: u32,
+    pub avg_snapshots_per_hour: f64,
+    pub peak_snapshots_per_hour: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CompactionMetrics {
+    pub days_since_last: Option<f64>,
+    pub compactions_last_week: u32,
+    pub avg_compaction_frequency_days: f64,
+    pub compaction_effectiveness: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct StorageEfficiencyMetrics {
+    pub total_size_gb: f64,
+    pub storage_growth_rate_gb_per_day: f64,
+    pub delete_ratio: f64,
+    pub update_ratio: f64,
+    pub data_freshness_hours: f64,
+    pub partition_efficiency: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrendMetrics {
+    pub file_count_trend: TrendDirection,
+    pub avg_file_size_trend: TrendDirection,
+    pub snapshot_frequency_trend: TrendDirection,
+    pub storage_growth_trend: TrendDirection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TrendDirection {
+    Improving,
+    Stable,
+    Degrading,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HealthAlert {
+    pub severity: AlertSeverity,
+    pub category: AlertCategory,
+    pub message: String,
+    pub metric_value: f64,
+    pub threshold: f64,
+    pub detected_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AlertSeverity {
+    Info,
+    Warning,
+    Critical,
+    Emergency,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AlertCategory {
+    SmallFiles,
+    HighSnapshotFrequency,
+    StorageGrowth,
+    CompactionNeeded,
+    PerformanceDegradation,
+    DataFreshness,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MaintenanceRecommendation {
+    pub priority: MaintenancePriority,
+    pub action_type: MaintenanceActionType,
+    pub description: String,
+    pub estimated_benefit: String,
+    pub effort_level: MaintenanceEffort,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MaintenancePriority {
+    Low,
+    Medium,
+    High,
+    Urgent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MaintenanceActionType {
+    Compaction,
+    PartitionEvolution,
+    SchemaEvolution,
+    RetentionPolicy,
+    Optimization,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MaintenanceEffort {
+    Low,     // < 1 hour
+    Medium,  // 1-4 hours
+    High,    // 1-2 days
+    Complex, // > 2 days
+}
