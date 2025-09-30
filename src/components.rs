@@ -821,13 +821,219 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
         div {
             class: "space-y-6",
 
-            // Health Analytics Notification (demonstrates analytics are working)
+            // Health Analytics Breakdown Panel
             div {
-                class: "bg-green-50 border border-green-200 rounded-lg p-3 mb-4",
+                class: "bg-white border border-gray-200 rounded-lg shadow-sm mb-6",
+
+                // Header
                 div {
-                    class: "flex items-center",
-                    span { class: "text-green-700 text-sm font-medium", "✅ Health Analytics Active" }
-                    span { class: "ml-2 text-green-600 text-sm", "Score: {health_metrics.health_score:.1}/100 | Files: {health_metrics.file_health.total_files} | Alerts: {health_metrics.alerts.len()}" }
+                    class: "px-6 py-4 border-b border-gray-200 bg-gray-50",
+                    div {
+                        class: "flex items-center justify-between",
+                        h3 {
+                            class: "text-lg font-medium text-gray-900",
+                            "📊 Table Health Analysis"
+                        }
+                        div {
+                            class: "flex items-center space-x-3",
+                            div {
+                                class: "text-right",
+                                div { class: "text-2xl font-bold text-gray-900", "{health_metrics.health_score:.0}" }
+                                div { class: "text-xs text-gray-500 uppercase tracking-wide", "Health Score" }
+                            }
+                            HealthScoreBadge { score: health_metrics.health_score }
+                        }
+                    }
+                }
+
+                // Health Breakdown Content
+                div {
+                    class: "p-6",
+
+                    // Score Explanation
+                    div {
+                        class: "mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200",
+                        div { class: "text-sm font-medium text-blue-900 mb-2", "How Your Score is Calculated" }
+                        div {
+                            class: "text-sm text-blue-800",
+                            "Health score starts at 100 and deducts points for issues: High small file ratio (-30), "
+                            "Excessive snapshots (-20), Missing compaction (-25), High storage growth (-15). "
+                            "Based on Netflix, Salesforce, and AWS production best practices."
+                        }
+                    }
+
+                    // Health Categories Grid
+                    div {
+                        class: "grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6",
+
+                        // File Health Category
+                        HealthCategoryCard {
+                            title: "📁 File Health".to_string(),
+                            score_impact: if health_metrics.file_health.small_file_ratio > 0.5 { -30.0 }
+                                         else if health_metrics.file_health.small_file_ratio > 0.3 { -15.0 }
+                                         else { 0.0 },
+                            status: if health_metrics.file_health.small_file_ratio > 0.5 { "Critical".to_string() }
+                                   else if health_metrics.file_health.small_file_ratio > 0.3 { "Warning".to_string() }
+                                   else { "Good".to_string() },
+                            metrics: vec![
+                                format!("Total Files: {}", health_metrics.file_health.total_files),
+                                format!("Small Files: {} ({:.1}%)",
+                                    health_metrics.file_health.small_files_count,
+                                    health_metrics.file_health.small_file_ratio * 100.0),
+                                format!("Average Size: {:.1} MB", health_metrics.file_health.avg_file_size_mb),
+                            ],
+                            explanation: "Small files (<64MB) hurt query performance. Keep small file ratio under 30%".to_string()
+                        }
+
+                        // Operational Health Category
+                        HealthCategoryCard {
+                            title: "⚡ Operational Health".to_string(),
+                            score_impact: if health_metrics.operational_health.snapshot_frequency.snapshots_last_hour > 20 { -20.0 }
+                                         else if health_metrics.operational_health.snapshot_frequency.snapshots_last_hour > 10 { -10.0 }
+                                         else { 0.0 },
+                            status: if health_metrics.operational_health.snapshot_frequency.snapshots_last_hour > 20 { "Critical".to_string() }
+                                   else if health_metrics.operational_health.snapshot_frequency.snapshots_last_hour > 10 { "Warning".to_string() }
+                                   else { "Good".to_string() },
+                            metrics: vec![
+                                format!("Snapshots/hour: {}", health_metrics.operational_health.snapshot_frequency.snapshots_last_hour),
+                                format!("Snapshots/day: {}", health_metrics.operational_health.snapshot_frequency.snapshots_last_day),
+                                if let Some(hours) = health_metrics.operational_health.time_since_last_compaction_hours {
+                                    if hours < 24.0 { format!("Last Compaction: {:.1}h ago", hours) }
+                                    else { format!("Last Compaction: {:.1}d ago", hours / 24.0) }
+                                } else { "Last Compaction: Unknown".to_string() }
+                            ],
+                            explanation: "High snapshot frequency (>10/hr) indicates inefficient write patterns".to_string()
+                        }
+
+                        // Storage Efficiency Category
+                        HealthCategoryCard {
+                            title: "💾 Storage Efficiency".to_string(),
+                            score_impact: if health_metrics.storage_efficiency.storage_growth_rate_gb_per_day > 500.0 { -15.0 }
+                                         else if health_metrics.storage_efficiency.storage_growth_rate_gb_per_day > 100.0 { -8.0 }
+                                         else { 0.0 },
+                            status: if health_metrics.storage_efficiency.storage_growth_rate_gb_per_day > 500.0 { "Warning".to_string() }
+                                   else { "Good".to_string() },
+                            metrics: vec![
+                                format!("Total Size: {:.1} GB", health_metrics.storage_efficiency.total_size_gb),
+                                format!("Growth Rate: {:+.1} GB/day", health_metrics.storage_efficiency.storage_growth_rate_gb_per_day),
+                                format!("Data Freshness: {:.1}h", health_metrics.storage_efficiency.data_freshness_hours),
+                            ],
+                            explanation: "Monitor storage growth and data freshness for cost optimization".to_string()
+                        }
+
+                        // Compaction Health Category
+                        HealthCategoryCard {
+                            title: "🔧 Compaction Health".to_string(),
+                            score_impact: if let Some(days) = health_metrics.operational_health.compaction_frequency.days_since_last {
+                                             if days > 14.0 { -25.0 } else if days > 7.0 { -12.0 } else { 0.0 }
+                                         } else { -10.0 },
+                            status: if let Some(days) = health_metrics.operational_health.compaction_frequency.days_since_last {
+                                       if days > 14.0 { "Critical".to_string() } else if days > 7.0 { "Warning".to_string() } else { "Good".to_string() }
+                                   } else { "Warning".to_string() },
+                            metrics: vec![
+                                if let Some(days) = health_metrics.operational_health.compaction_frequency.days_since_last {
+                                    format!("Days Since Last: {:.1}", days)
+                                } else { "Days Since Last: Unknown".to_string() },
+                                format!("Compactions/week: {}", health_metrics.operational_health.compaction_frequency.compactions_last_week),
+                                format!("Avg Frequency: {:.1} days", health_metrics.operational_health.compaction_frequency.avg_compaction_frequency_days),
+                            ],
+                            explanation: "Regular compaction (weekly) maintains query performance and reduces metadata overhead".to_string()
+                        }
+                    }
+
+                    // Active Alerts Section
+                    if !health_metrics.alerts.is_empty() {
+                        div {
+                            class: "border-t border-gray-200 pt-6",
+                            h4 { class: "text-lg font-medium text-gray-900 mb-4", "🚨 Active Health Alerts" }
+                            div { class: "space-y-3" }
+                            for alert in health_metrics.alerts.iter() {
+                                div {
+                                    class: match alert.severity {
+                                        crate::data::AlertSeverity::Critical | crate::data::AlertSeverity::Emergency =>
+                                            "border-l-4 border-red-400 bg-red-50 p-4",
+                                        crate::data::AlertSeverity::Warning =>
+                                            "border-l-4 border-yellow-400 bg-yellow-50 p-4",
+                                        crate::data::AlertSeverity::Info =>
+                                            "border-l-4 border-blue-400 bg-blue-50 p-4",
+                                    },
+                                    div {
+                                        class: match alert.severity {
+                                            crate::data::AlertSeverity::Critical | crate::data::AlertSeverity::Emergency =>
+                                                "text-red-800 font-medium text-sm",
+                                            crate::data::AlertSeverity::Warning =>
+                                                "text-yellow-800 font-medium text-sm",
+                                            crate::data::AlertSeverity::Info =>
+                                                "text-blue-800 font-medium text-sm",
+                                        },
+                                        "{alert.message}"
+                                    }
+                                    if alert.metric_value != 0.0 {
+                                        div {
+                                            class: match alert.severity {
+                                                crate::data::AlertSeverity::Critical | crate::data::AlertSeverity::Emergency =>
+                                                    "text-red-600 text-xs mt-1",
+                                                crate::data::AlertSeverity::Warning =>
+                                                    "text-yellow-600 text-xs mt-1",
+                                                crate::data::AlertSeverity::Info =>
+                                                    "text-blue-600 text-xs mt-1",
+                                            },
+                                            "Current: {alert.metric_value:.1} | Threshold: {alert.threshold:.1}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Recommendations Section
+                    if !health_metrics.recommendations.is_empty() {
+                        div {
+                            class: "border-t border-gray-200 pt-6 mt-6",
+                            h4 { class: "text-lg font-medium text-gray-900 mb-4", "💡 Recommended Actions" }
+                            div { class: "space-y-3" }
+                            for recommendation in health_metrics.recommendations.iter() {
+                                div {
+                                    class: match recommendation.priority {
+                                        crate::data::MaintenancePriority::Urgent => "border-l-4 border-red-400 bg-red-50 p-4",
+                                        crate::data::MaintenancePriority::High => "border-l-4 border-orange-400 bg-orange-50 p-4",
+                                        crate::data::MaintenancePriority::Medium => "border-l-4 border-yellow-400 bg-yellow-50 p-4",
+                                        crate::data::MaintenancePriority::Low => "border-l-4 border-blue-400 bg-blue-50 p-4",
+                                    },
+                                    div {
+                                        class: "flex justify-between items-start mb-2",
+                                        div {
+                                            class: match recommendation.priority {
+                                                crate::data::MaintenancePriority::Urgent => "text-red-800 font-medium text-sm",
+                                                crate::data::MaintenancePriority::High => "text-orange-800 font-medium text-sm",
+                                                crate::data::MaintenancePriority::Medium => "text-yellow-800 font-medium text-sm",
+                                                crate::data::MaintenancePriority::Low => "text-blue-800 font-medium text-sm",
+                                            },
+                                            "{recommendation.description}"
+                                        }
+                                        span {
+                                            class: match recommendation.priority {
+                                                crate::data::MaintenancePriority::Urgent => "inline-flex px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800",
+                                                crate::data::MaintenancePriority::High => "inline-flex px-2 py-1 text-xs font-medium rounded bg-orange-100 text-orange-800",
+                                                crate::data::MaintenancePriority::Medium => "inline-flex px-2 py-1 text-xs font-medium rounded bg-yellow-100 text-yellow-800",
+                                                crate::data::MaintenancePriority::Low => "inline-flex px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800",
+                                            },
+                                            "{recommendation.priority:?} Priority"
+                                        }
+                                    }
+                                    div {
+                                        class: match recommendation.priority {
+                                            crate::data::MaintenancePriority::Urgent => "text-red-600 text-xs",
+                                            crate::data::MaintenancePriority::High => "text-orange-600 text-xs",
+                                            crate::data::MaintenancePriority::Medium => "text-yellow-600 text-xs",
+                                            crate::data::MaintenancePriority::Low => "text-blue-600 text-xs",
+                                        },
+                                        "Benefit: {recommendation.estimated_benefit} | Effort: {recommendation.effort_level:?}"
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1456,6 +1662,239 @@ pub fn HealthAlert(alert: crate::data::HealthAlert) -> Element {
                 }
             }
         }
+    }
+}
+
+// Enhanced Health Dashboard Components
+
+#[component]
+pub fn HealthScoreBadge(score: f64) -> Element {
+    let (bg_class, text_class, icon_class, label) = match score {
+        s if s >= 90.0 => (
+            "bg-green-100",
+            "text-green-800",
+            "text-green-600",
+            "Excellent",
+        ),
+        s if s >= 75.0 => ("bg-blue-100", "text-blue-800", "text-blue-600", "Good"),
+        s if s >= 60.0 => (
+            "bg-yellow-100",
+            "text-yellow-800",
+            "text-yellow-600",
+            "Fair",
+        ),
+        s if s >= 40.0 => (
+            "bg-orange-100",
+            "text-orange-800",
+            "text-orange-600",
+            "Poor",
+        ),
+        _ => ("bg-red-100", "text-red-800", "text-red-600", "Critical"),
+    };
+
+    rsx! {
+        div {
+            class: format!("inline-flex items-center px-4 py-2 rounded-lg {bg_class}"),
+            div {
+                class: format!("w-3 h-3 rounded-full mr-3 {}", icon_class.replace("text-", "bg-")),
+            }
+            div {
+                class: "text-center",
+                div {
+                    class: format!("text-lg font-bold {text_class}"),
+                    "{score:.0}/100"
+                }
+                div {
+                    class: format!("text-xs {}", text_class.replace("800", "600")),
+                    "{label}"
+                }
+            }
+        }
+    }
+}
+
+#[derive(Props, Clone, PartialEq)]
+pub struct HealthCategoryCardProps {
+    title: String,
+    score_impact: f64,
+    status: String,
+    metrics: Vec<String>,
+    explanation: String,
+}
+
+#[component]
+pub fn HealthCategoryCard(props: HealthCategoryCardProps) -> Element {
+    let (status_bg, status_text, border_class) = match props.status.as_str() {
+        "Critical" => ("bg-red-100", "text-red-800", "border-red-200"),
+        "Warning" => ("bg-yellow-100", "text-yellow-800", "border-yellow-200"),
+        "Good" => ("bg-green-100", "text-green-800", "border-green-200"),
+        _ => ("bg-gray-100", "text-gray-800", "border-gray-200"),
+    };
+
+    rsx! {
+        div {
+            class: format!("border rounded-lg p-4 {border_class}"),
+
+            // Header with title and status
+            div {
+                class: "flex items-center justify-between mb-3",
+                h5 {
+                    class: "font-medium text-gray-900",
+                    "{props.title}"
+                }
+                div {
+                    class: "flex items-center space-x-2",
+                    span {
+                        class: format!("inline-flex px-2 py-1 text-xs font-semibold rounded-full {status_bg} {status_text}"),
+                        "{props.status}"
+                    }
+                    if props.score_impact < 0.0 {
+                        span {
+                            class: "text-xs text-red-600 font-medium",
+                            "{props.score_impact:.0} pts"
+                        }
+                    }
+                }
+            }
+
+            // Metrics
+            div {
+                class: "space-y-2 mb-3",
+                for metric in &props.metrics {
+                    div {
+                        class: "text-sm text-gray-700",
+                        "{metric}"
+                    }
+                }
+            }
+
+            // Explanation/Tooltip
+            div {
+                class: "bg-gray-50 rounded p-3 text-xs text-gray-600",
+                "💡 {props.explanation}"
+            }
+        }
+    }
+}
+
+#[derive(Props, Clone, PartialEq)]
+pub struct MaintenanceRecommendationCardProps {
+    recommendation: crate::data::MaintenanceRecommendation,
+}
+
+#[component]
+pub fn MaintenanceRecommendationCard(props: MaintenanceRecommendationCardProps) -> Element {
+    let rec = &props.recommendation;
+
+    let (priority_bg, priority_text, icon) = match rec.priority {
+        crate::data::MaintenancePriority::Urgent => ("bg-red-100", "text-red-800", "🚨"),
+        crate::data::MaintenancePriority::High => ("bg-orange-100", "text-orange-800", "⚠️"),
+        crate::data::MaintenancePriority::Medium => ("bg-yellow-100", "text-yellow-800", "⚡"),
+        crate::data::MaintenancePriority::Low => ("bg-blue-100", "text-blue-800", "💡"),
+    };
+
+    let effort_text = match rec.effort_level {
+        crate::data::MaintenanceEffort::Low => "< 1 hour",
+        crate::data::MaintenanceEffort::Medium => "1-4 hours",
+        crate::data::MaintenanceEffort::High => "1-2 days",
+        crate::data::MaintenanceEffort::Complex => "> 2 days",
+    };
+
+    rsx! {
+        div {
+            class: "border border-gray-200 rounded-lg p-4",
+            div {
+                class: "flex items-start justify-between mb-2",
+                div {
+                    class: "flex items-center space-x-2",
+                    span { class: "text-sm", "{icon}" }
+                    span {
+                        class: format!("inline-flex px-2 py-1 text-xs font-semibold rounded-full {priority_bg} {priority_text}"),
+                        {format!("{:?}", rec.priority)}
+                    }
+                }
+                span {
+                    class: "text-xs text-gray-500",
+                    "Effort: {effort_text}"
+                }
+            }
+            h6 {
+                class: "font-medium text-gray-900 mb-2",
+                {format!("{:?}: {}", rec.action_type, rec.description)}
+            }
+            p {
+                class: "text-sm text-gray-600",
+                "Expected benefit: {rec.estimated_benefit}"
+            }
+        }
+    }
+}
+
+// Helper functions for health calculations
+fn calculate_file_health_score(file_health: &crate::data::FileHealthMetrics) -> f64 {
+    let mut score: f64 = 100.0;
+    // Small file penalty
+    if file_health.small_file_ratio > 0.5 {
+        score -= 30.0;
+    } else if file_health.small_file_ratio > 0.3 {
+        score -= 15.0;
+    }
+    // File size distribution penalty
+    if file_health.avg_file_size_mb < 16.0 {
+        score -= 10.0;
+    }
+    score.max(0.0)
+}
+
+fn calculate_operational_health_score(op_health: &crate::data::OperationalHealthMetrics) -> f64 {
+    let mut score: f64 = 100.0;
+    // High snapshot frequency penalty
+    if op_health.snapshot_frequency.snapshots_last_hour > 20 {
+        score -= 20.0;
+    } else if op_health.snapshot_frequency.snapshots_last_hour > 10 {
+        score -= 10.0;
+    }
+    // Failed operations penalty
+    score -= (op_health.failed_operations as f64) * 5.0;
+    score.max(0.0)
+}
+
+fn calculate_storage_health_score(storage: &crate::data::StorageEfficiencyMetrics) -> f64 {
+    let mut score: f64 = 100.0;
+    // Storage growth penalty
+    if storage.storage_growth_rate_gb_per_day > 500.0 {
+        score -= 15.0;
+    } else if storage.storage_growth_rate_gb_per_day > 100.0 {
+        score -= 8.0;
+    }
+    // Data freshness penalty
+    if storage.data_freshness_hours > 48.0 {
+        score -= 10.0;
+    } else if storage.data_freshness_hours > 24.0 {
+        score -= 5.0;
+    }
+    score.max(0.0)
+}
+
+fn calculate_compaction_health_score(compaction: &crate::data::CompactionMetrics) -> f64 {
+    let mut score: f64 = 100.0;
+    if let Some(days) = compaction.days_since_last {
+        if days > 14.0 {
+            score -= 25.0;
+        } else if days > 7.0 {
+            score -= 12.0;
+        }
+    } else {
+        score -= 10.0; // No compaction data
+    }
+    score.max(0.0)
+}
+
+fn get_health_status(score: f64) -> &'static str {
+    match score {
+        s if s >= 90.0 => "Good",
+        s if s >= 70.0 => "Warning",
+        _ => "Critical",
     }
 }
 
