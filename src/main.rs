@@ -3,6 +3,7 @@
 use dioxus::events::Key;
 use dioxus::prelude::*;
 
+mod analytics;
 mod catalog;
 mod catalog_ui;
 mod components;
