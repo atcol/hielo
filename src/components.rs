@@ -800,6 +800,12 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
     // Compute health metrics - Analytics engine is active!
     let health_metrics = TableAnalytics::compute_health_metrics(&table);
 
+    // Health section collapsed state
+    let mut health_collapsed = use_signal(|| true);
+
+    // Loading state for snapshots
+    let mut snapshots_loading = use_signal(|| false);
+
     // Log health metrics to console for demo (in production this would be displayed in UI)
     tracing::info!(
         "Table Health Analytics: Score={:.1}, Files={} ({:.1}% small), Activity={}/hr, Storage={:.1}GB ({:+.1}GB/day), Alerts={}",
@@ -825,14 +831,33 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
             div {
                 class: "bg-white border border-gray-200 rounded-lg shadow-sm mb-6",
 
-                // Header
+                // Header - Clickable to toggle collapse
                 div {
-                    class: "px-6 py-4 border-b border-gray-200 bg-gray-50",
+                    class: "px-6 py-4 border-b border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors",
+                    onclick: move |_| health_collapsed.set(!health_collapsed()),
                     div {
                         class: "flex items-center justify-between",
-                        h3 {
-                            class: "text-lg font-medium text-gray-900",
-                            "📊 Table Health Analysis"
+                        div {
+                            class: "flex items-center space-x-3",
+                            h3 {
+                                class: "text-lg font-medium text-gray-900",
+                                "📊 Table Health Analysis"
+                            }
+                            // Collapse/Expand icon
+                            svg {
+                                class: format!("w-5 h-5 text-gray-500 transition-transform duration-200 {}",
+                                    if health_collapsed() { "rotate-0" } else { "rotate-180" }
+                                ),
+                                fill: "none",
+                                stroke: "currentColor",
+                                view_box: "0 0 24 24",
+                                path {
+                                    stroke_linecap: "round",
+                                    stroke_linejoin: "round",
+                                    stroke_width: "2",
+                                    d: "M19 9l-7 7-7-7"
+                                }
+                            }
                         }
                         div {
                             class: "flex items-center space-x-3",
@@ -846,9 +871,10 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                     }
                 }
 
-                // Health Breakdown Content
-                div {
-                    class: "p-6",
+                // Health Breakdown Content - Only show when not collapsed
+                if !health_collapsed() {
+                    div {
+                        class: "p-6",
 
                     // Score Explanation
                     div {
@@ -1035,6 +1061,7 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                         }
                     }
                 }
+                } // End conditional health breakdown content
             }
 
             // Filter Panel Header with Toggle
@@ -1295,7 +1322,19 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                         class: "text-sm text-gray-500 mb-6",
                         "Detailed history showing all table snapshots from most recent to oldest"
                     }
-                    if filtered_snapshots.is_empty() {
+                    if snapshots_loading() {
+                        // Loading state
+                        div {
+                            class: "flex items-center justify-center py-12",
+                            div {
+                                class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"
+                            }
+                            span {
+                                class: "ml-3 text-sm text-gray-600",
+                                "Loading snapshots..."
+                            }
+                        }
+                    } else if filtered_snapshots.is_empty() {
                         // No results state
                         div {
                             class: "text-center py-12",
@@ -1332,7 +1371,15 @@ pub fn SnapshotTimelineTab(table: IcebergTable) -> Element {
                                 class: "relative",
                                 for (index, snapshot) in filtered_snapshots.iter().enumerate() {
                                 li {
-                                    class: "timeline-item",
+                                    class: "timeline-item cursor-pointer hover:bg-gray-50 transition-colors rounded-lg p-3 -m-3",
+                                    onclick: move |_| {
+                                        snapshots_loading.set(true);
+                                        // Simulate async operation (in real app this would load snapshot details)
+                                        spawn(async move {
+                                            tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
+                                            snapshots_loading.set(false);
+                                        });
+                                    },
                                     div {
                                         class: "relative flex space-x-3",
                                         div {
