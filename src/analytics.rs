@@ -321,6 +321,9 @@ impl TableAnalytics {
             } else if days_since_compaction > HealthThresholds::COMPACTION_WARNING_DAYS {
                 score -= 12.0;
             }
+        } else {
+            // No compaction data available - apply penalty for lack of monitoring
+            score -= 10.0;
         }
 
         // Storage growth penalties
