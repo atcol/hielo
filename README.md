@@ -60,6 +60,7 @@ Download the latest release for your platform from the [Releases](../../releases
 #### Prerequisites
 
 - Rust 1.70+ (install via [rustup](https://rustup.rs/))
+- Node.js 18+ (for the Tailwind CSS build pipeline)
 - Platform-specific dependencies:
 
 **Linux (Ubuntu/Debian)**:
@@ -108,6 +109,22 @@ cargo fmt --check
 # Run clippy lints
 cargo clippy -- -D warnings
 ```
+
+### Tailwind & shadcn styling pipeline
+
+The application now ships with a local Tailwind/shadcn toolchain. After installing Node.js, run:
+
+```bash
+npm install
+
+# Generate the stylesheet once
+npm run tailwind:build
+
+# Or watch for changes while developing the UI
+npm run tailwind:watch
+```
+
+The compiled CSS is written to `assets/main.css`, which is the stylesheet consumed by the Dioxus application. Make sure `npm run tailwind:build` runs before packaging releases so the latest styles are bundled.
 
 ## License
 
