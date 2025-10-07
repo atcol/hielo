@@ -126,6 +126,12 @@ npm run tailwind:watch
 
 The compiled CSS is written to `assets/main.css`, which is the stylesheet consumed by the Dioxus application. Make sure `npm run tailwind:build` runs before packaging releases so the latest styles are bundled.
 
+#### Using the Tweak “Clean Slate” theme
+
+- The default palette comes from Tweak’s [Clean Slate](https://tweakcn.com/) theme. Its design tokens live in `assets/themes/clean-slate.css` and are imported automatically by `assets/tailwind.css`.
+- If Tweak ships updates, replace the values in `assets/themes/clean-slate.css` (or add alternative theme files) and rerun `npm run tailwind:build` to regenerate `assets/main.css`.
+- To experiment with additional themes, create new files under `assets/themes/` and update the import at the top of `assets/tailwind.css` to point at the one you want.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
