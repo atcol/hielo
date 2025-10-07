@@ -124,7 +124,7 @@ npm run tailwind:build
 npm run tailwind:watch
 ```
 
-The compiled CSS is written to `assets/main.css`, which is the stylesheet consumed by the Dioxus application. Make sure `npm run tailwind:build` runs before packaging releases so the latest styles are bundled.
+The compiled CSS is written to `assets/main.css`, which is the stylesheet consumed by the Dioxus application. When the generated file is missing the repository ships a lightweight fallback that pulls Tailwind from the CDN so local builds remain styled, but that fallback requires network access. Make sure `npm run tailwind:build` runs before packaging releases so the latest styles are bundled offline.
 
 #### Using the Tweak “Clean Slate” theme
 
