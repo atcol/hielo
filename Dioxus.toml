@@ -11,9 +11,7 @@ reload_html = true
 watch_path = ["src", "assets"]
 
 [web.resource]
-# Tailwind CSS for styling (using CDN for development)
 style = [
-    "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css",
     "./assets/main.css"
 ]
 

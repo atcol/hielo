@@ -1,0 +1,50 @@
+@import "./themes/clean-slate.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .timeline-item {
+    position: relative;
+    padding-left: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .timeline-item::before {
+    content: "";
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    background-color: hsl(var(--primary));
+    border-radius: 9999px;
+    border: 2px solid hsl(var(--card));
+    box-shadow: 0 0 0 2px hsl(var(--primary));
+  }
+
+  .timeline-item::after {
+    content: "";
+    position: absolute;
+    left: 0.875rem;
+    top: 1.25rem;
+    width: 2px;
+    height: calc(100% + 1rem);
+    background-color: hsl(var(--border));
+  }
+
+  .timeline-item:last-child::after {
+    display: none;
+  }
+}

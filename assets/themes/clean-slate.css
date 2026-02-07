@@ -1,0 +1,118 @@
+/*
+ * Clean Slate-inspired theme tokens matching the palette showcased on https://tweakcn.com.
+ * The palette focuses on soft slates, gentle teals, and generous whitespace.
+ */
+
+@layer base {
+  :root {
+    --background: 210 20% 97%;
+    --foreground: 216 33% 15%;
+    --muted: 210 16% 92%;
+    --muted-foreground: 215 15% 40%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 216 33% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 216 33% 15%;
+    --border: 214 20% 88%;
+    --input: 214 20% 85%;
+    --primary: 199 84% 46%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 202 32% 88%;
+    --secondary-foreground: 216 33% 22%;
+    --accent: 173 34% 82%;
+    --accent-foreground: 218 33% 20%;
+    --destructive: 5 68% 45%;
+    --destructive-foreground: 210 40% 98%;
+    --ring: 199 84% 46%;
+    --radius: 0.9rem;
+    --sidebar: 210 20% 96%;
+    --sidebar-foreground: 216 32% 22%;
+    --sidebar-border: 213 18% 86%;
+    --sidebar-muted: 210 17% 92%;
+    --sidebar-muted-foreground: 215 13% 46%;
+  }
+
+  .dark {
+    --background: 225 24% 12%;
+    --foreground: 210 40% 96%;
+    --muted: 222 18% 21%;
+    --muted-foreground: 214 12% 70%;
+    --popover: 222 22% 15%;
+    --popover-foreground: 210 40% 96%;
+    --card: 222 22% 15%;
+    --card-foreground: 210 40% 96%;
+    --border: 222 18% 25%;
+    --input: 222 18% 28%;
+    --primary: 199 76% 62%;
+    --primary-foreground: 223 47% 12%;
+    --secondary: 215 20% 26%;
+    --secondary-foreground: 210 40% 96%;
+    --accent: 188 34% 32%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 3 65% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --ring: 199 76% 62%;
+    --radius: 0.9rem;
+    --sidebar: 222 22% 15%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-border: 222 20% 22%;
+    --sidebar-muted: 220 17% 22%;
+    --sidebar-muted-foreground: 214 14% 68%;
+  }
+}
+
+:root {
+  --background: 210 20% 97%;
+  --foreground: 216 33% 15%;
+  --muted: 210 16% 92%;
+  --muted-foreground: 215 15% 40%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 216 33% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 216 33% 15%;
+  --border: 214 20% 88%;
+  --input: 214 20% 85%;
+  --primary: 199 84% 46%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 202 32% 88%;
+  --secondary-foreground: 216 33% 22%;
+  --accent: 173 34% 82%;
+  --accent-foreground: 218 33% 20%;
+  --destructive: 5 68% 45%;
+  --destructive-foreground: 210 40% 98%;
+  --ring: 199 84% 46%;
+  --radius: 0.9rem;
+  --sidebar: 210 20% 96%;
+  --sidebar-foreground: 216 32% 22%;
+  --sidebar-border: 213 18% 86%;
+  --sidebar-muted: 210 17% 92%;
+  --sidebar-muted-foreground: 215 13% 46%;
+}
+
+.dark {
+  --background: 225 24% 12%;
+  --foreground: 210 40% 96%;
+  --muted: 222 18% 21%;
+  --muted-foreground: 214 12% 70%;
+  --popover: 222 22% 15%;
+  --popover-foreground: 210 40% 96%;
+  --card: 222 22% 15%;
+  --card-foreground: 210 40% 96%;
+  --border: 222 18% 25%;
+  --input: 222 18% 28%;
+  --primary: 199 76% 62%;
+  --primary-foreground: 223 47% 12%;
+  --secondary: 215 20% 26%;
+  --secondary-foreground: 210 40% 96%;
+  --accent: 188 34% 32%;
+  --accent-foreground: 210 40% 96%;
+  --destructive: 3 65% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: 199 76% 62%;
+  --radius: 0.9rem;
+  --sidebar: 222 22% 15%;
+  --sidebar-foreground: 210 40% 96%;
+  --sidebar-border: 222 20% 22%;
+  --sidebar-muted: 220 17% 22%;
+  --sidebar-muted-foreground: 214 14% 68%;
+}

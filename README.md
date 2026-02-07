@@ -60,6 +60,7 @@ Download the latest release for your platform from the [Releases](../../releases
 #### Prerequisites
 
 - Rust 1.70+ (install via [rustup](https://rustup.rs/))
+- Node.js 18+ (for the Tailwind CSS build pipeline)
 - Platform-specific dependencies:
 
 **Linux (Ubuntu/Debian)**:
@@ -108,6 +109,28 @@ cargo fmt --check
 # Run clippy lints
 cargo clippy -- -D warnings
 ```
+
+### Tailwind & shadcn styling pipeline
+
+The application now ships with a local Tailwind/shadcn toolchain. After installing Node.js, run:
+
+```bash
+npm install
+
+# Generate the stylesheet once
+npm run tailwind:build
+
+# Or watch for changes while developing the UI
+npm run tailwind:watch
+```
+
+The compiled CSS is written to `assets/main.css`, which is the stylesheet consumed by the Dioxus application. When the generated file is missing the repository ships a lightweight fallback that pulls Tailwind from the CDN so local builds remain styled, but that fallback requires network access. Make sure `npm run tailwind:build` runs before packaging releases so the latest styles are bundled offline.
+
+#### Using the Tweak “Clean Slate” theme
+
+- The default palette comes from Tweak’s [Clean Slate](https://tweakcn.com/) theme. Its design tokens live in `assets/themes/clean-slate.css` and are imported automatically by `assets/tailwind.css`.
+- If Tweak ships updates, replace the values in `assets/themes/clean-slate.css` (or add alternative theme files) and rerun `npm run tailwind:build` to regenerate `assets/main.css`.
+- To experiment with additional themes, create new files under `assets/themes/` and update the import at the top of `assets/tailwind.css` to point at the one you want.
 
 ## License
 
