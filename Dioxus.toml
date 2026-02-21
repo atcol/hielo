@@ -3,7 +3,7 @@ name = "Hielo"
 default_platform = "desktop"
 
 [web.app]
-title = "Hieldo - Iceberg Table Visualisation & Analysis"
+title = "Hielo - Iceberg Table Visualisation & Analysis"
 base_path = "hielo"
 
 [web.watcher]

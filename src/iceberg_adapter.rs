@@ -5,7 +5,6 @@ use crate::data::{
 use anyhow::Result;
 use iceberg::spec::{PartitionSpecRef, PrimitiveType, SchemaRef, Transform, Type};
 use iceberg::table::Table;
-use std::collections::HashMap;
 
 /// Convert an iceberg-rust Table to our internal IcebergTable representation
 pub fn convert_iceberg_table(
@@ -141,10 +140,27 @@ fn convert_primitive_type(primitive: &PrimitiveType) -> DataType {
 }
 
 fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
-    let summary = Some(convert_summary(
-        snapshot,
-        &snapshot.summary().additional_properties,
-    ));
+    let iceberg_summary = snapshot.summary();
+    let operation = iceberg_summary.operation.as_str().to_string();
+    let props = &iceberg_summary.additional_properties;
+
+    log::debug!(
+        "Snapshot summary keys: {:?}",
+        props.keys().collect::<Vec<_>>()
+    );
+    log::debug!("Operation: {}", operation);
+
+    let summary = Some(Summary {
+        operation,
+        added_data_files: props.get("added-data-files").cloned(),
+        deleted_data_files: props.get("deleted-data-files").cloned(),
+        added_records: props.get("added-records").cloned(),
+        deleted_records: props.get("deleted-records").cloned(),
+        total_records: props.get("total-records").cloned(),
+        added_files_size: props.get("added-files-size").cloned(),
+        removed_files_size: props.get("removed-files-size").cloned(),
+        total_size: props.get("total-size").cloned(),
+    });
 
     Ok(Snapshot {
         snapshot_id: snapshot.snapshot_id() as u64,
@@ -153,52 +169,6 @@ fn convert_snapshot(snapshot: &iceberg::spec::Snapshot) -> Result<Snapshot> {
         manifest_list: snapshot.manifest_list().to_string(),
         schema_id: snapshot.schema_id(),
     })
-}
-
-fn convert_summary(
-    _snapshot: &iceberg::spec::Snapshot,
-    summary: &HashMap<String, String>,
-) -> Summary {
-    // Log available summary keys for debugging
-    log::debug!(
-        "Snapshot summary keys: {:?}",
-        summary.keys().collect::<Vec<_>>()
-    );
-
-    // Try to get operation from different sources
-    let operation = summary
-        .get("operation")
-        .cloned()
-        .or_else(|| summary.get("spark.app.id").map(|_| "append".to_string())) // Spark usually does appends
-        .or_else(|| {
-            // Try to infer operation from snapshot summary data
-            if summary.contains_key("added-data-files") || summary.contains_key("added-records") {
-                Some("append".to_string())
-            } else if summary.contains_key("deleted-data-files")
-                || summary.contains_key("deleted-records")
-            {
-                Some("delete".to_string())
-            } else if summary.contains_key("total-data-files") {
-                Some("overwrite".to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "append".to_string()); // Default to append as it's most common
-
-    log::debug!("Inferred operation: {}", operation);
-
-    Summary {
-        operation,
-        added_data_files: summary.get("added-data-files").cloned(),
-        deleted_data_files: summary.get("deleted-data-files").cloned(),
-        added_records: summary.get("added-records").cloned(),
-        deleted_records: summary.get("deleted-records").cloned(),
-        total_records: summary.get("total-records").cloned(),
-        added_files_size: summary.get("added-files-size").cloned(),
-        removed_files_size: summary.get("removed-files-size").cloned(),
-        total_size: summary.get("total-size").cloned(),
-    }
 }
 
 fn convert_partition_spec(spec: &PartitionSpecRef) -> Result<PartitionSpec> {

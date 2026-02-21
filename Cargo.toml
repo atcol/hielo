@@ -2,39 +2,40 @@
 name = "hielo"
 version = "0.5.0"
 edition = "2024"
+rust-version = "1.88"
+description = "A native desktop application for visualizing Apache Iceberg table metadata and snapshot history"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/atcol/hielo"
 
 [dependencies]
 dioxus = { version = "0.6", features = ["desktop"] }
 dioxus-logger = "0.6"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.18", features = ["v4", "serde"] }
-tokio = { version = "1.47", features = ["full"] }
-anyhow = "1.0"
-tracing = "0.1.41"
-log = "0.4.27"
-dirs = "5.0"
-iceberg-catalog-rest = "0.6.0"
-iceberg-catalog-glue = "0.6.0"
-iceberg = "0.6.0"
-url = "2.5.7"
+uuid = { version = "1", features = ["v4", "serde"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+tracing = "0.1"
+log = "0.4"
+dirs = "6"
+iceberg = "0.8"
+iceberg-catalog-rest = "0.8"
+iceberg-catalog-glue = "0.8"
+url = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
-
-[profile.wasm-dev]
-inherits = "dev"
-opt-level = 1
-
-[profile.server-dev]
-inherits = "dev"
-
-[profile.android-dev]
-inherits = "dev"
-
-[dev-dependencies]
-tempfile = "3.21.0"
+strip = true

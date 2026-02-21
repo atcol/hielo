@@ -1,8 +1,8 @@
 use anyhow::Result;
 use iceberg::table::Table;
-use iceberg::{Catalog, NamespaceIdent, TableIdent};
-use iceberg_catalog_glue::{GlueCatalog, GlueCatalogConfig};
-use iceberg_catalog_rest::{RestCatalog, RestCatalogConfig};
+use iceberg::{Catalog, CatalogBuilder, NamespaceIdent, TableIdent};
+use iceberg_catalog_glue::GlueCatalogBuilder;
+use iceberg_catalog_rest::RestCatalogBuilder;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -159,7 +159,7 @@ impl CatalogManager {
             CatalogError::InvalidConfig("URI is required for REST catalog".to_string())
         })?;
 
-        let url = Url::parse(uri)
+        let _url = Url::parse(uri)
             .map_err(|e| CatalogError::InvalidConfig(format!("Invalid URI: {}", e)))?;
 
         let mut props = HashMap::new();
@@ -175,12 +175,12 @@ impl CatalogManager {
             props.insert("token".to_string(), token.clone());
         }
 
-        let rest_config = RestCatalogConfig::builder()
-            .uri(uri.clone())
-            .props(props)
-            .build();
-
-        let catalog = RestCatalog::new(rest_config);
+        let catalog = RestCatalogBuilder::default()
+            .load(config.name.clone(), props)
+            .await
+            .map_err(|e| {
+                CatalogError::ConnectionFailed(format!("Failed to create REST catalog: {}", e))
+            })?;
 
         Ok(Arc::new(catalog))
     }
@@ -212,11 +212,6 @@ impl CatalogManager {
             props.insert("endpoint_url".to_string(), endpoint.clone());
         }
 
-        let glue_config = GlueCatalogConfig::builder()
-            .warehouse(warehouse.clone())
-            .props(props.clone())
-            .build();
-
         log::info!(
             "Creating Glue catalog with config - warehouse: '{}', region: '{}', props: {:?}",
             warehouse,
@@ -236,11 +231,14 @@ impl CatalogManager {
             log::warn!("No region found in Glue catalog configuration!");
         }
 
-        let catalog = GlueCatalog::new(glue_config).await.map_err(|e| {
-            let error = format!("Failed to create Glue catalog: {}", e);
-            log::error!("{}", error);
-            CatalogError::ConnectionFailed(error)
-        })?;
+        let catalog = GlueCatalogBuilder::default()
+            .load(config.name.clone(), props)
+            .await
+            .map_err(|e| {
+                let error = format!("Failed to create Glue catalog: {}", e);
+                log::error!("{}", error);
+                CatalogError::ConnectionFailed(error)
+            })?;
 
         Ok(Arc::new(catalog))
     }
